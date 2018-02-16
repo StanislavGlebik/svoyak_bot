@@ -1,0 +1,10 @@
+[package]
+name = "svoyak_bot"
+version = "0.1.0"
+authors = ["stash <stash@fb.com>"]
+
+[dependencies]
+failure = "*"
+futures = "*"
+telegram-bot = "*"
+tokio-core = "*"
