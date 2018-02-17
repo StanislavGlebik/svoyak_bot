@@ -2,6 +2,8 @@ extern crate failure;
 extern crate futures;
 #[macro_use]
 extern crate telegram_bot;
+#[macro_use]
+extern crate serde_derive;
 extern crate tokio_core;
 
 use std::collections::BTreeSet;
@@ -26,15 +28,15 @@ mod messages;
 mod player;
 mod timeout_stream;
 mod question;
+mod telegram_config;
 
 use messages::*;
 
+const TOKEN_VAR: &str = "TELEGRAM_BOT_TOKEN";
+const CONFIG_VAR: &str = "GAME_CONFIG";
 
 const ANSWER_YES: &str = "AnswerYes";
 const ANSWER_NO: &str = "AnswerNo";
-
-pub const ADMIN_ID: i64 = 125732128;
-pub const GAME_CHAT_ID: i64 = -272387150;
 
 fn question_inline_keyboard(questions: &HashMap<String, Vec<usize>>) -> InlineKeyboardMarkup {
     let mut markup = InlineKeyboardMarkup::new();
@@ -148,10 +150,10 @@ where
 
 fn main() {
     let mut core = Core::new().unwrap();
-    let token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
+    let token = env::var(TOKEN_VAR).unwrap();
     let api = Api::configure(token.clone()).build(core.handle()).unwrap();
 
-    let admin_user: UserId = UserId::from(ADMIN_ID);
+    let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok());
 
     // Fetch new updates via long poll method
     let (sender, receiver) = mpsc::channel::<Option<Timeout>>(1);
@@ -161,7 +163,9 @@ fn main() {
     let updates_stream = api.stream();
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
 
-    let mut gamestate = gamestate::GameState::new(admin_user);
+    let mut gamestate = gamestate::GameState::new(config.admin_user);
+
+    eprintln!("Game is ready to start!");
 
     let fut = requests_stream.for_each(move |request| {
         let res = match request {
@@ -224,11 +228,11 @@ fn main() {
         for r in res {
             let fut = match r {
                 gamestate::UiRequest::SendTextToMainChat(msg) => {
-                    let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
+                    let msg = SendMessage::new(config.game_chat, msg);
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::SendTextToMainChatWithDelay(msg, delay) => {
-                    let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
+                    let msg = SendMessage::new(config.game_chat, msg);
                     let timeout = Timeout::new(delay, &handle).expect("cannot create timer");
                     let sendfut = api.send(msg).map_err(|_| err_msg("send failed"));
                     let fut = timeout.map_err(|_| err_msg("timeout error")).and_then(|_| sendfut);
@@ -240,22 +244,21 @@ fn main() {
                 }
                 gamestate::UiRequest::ChooseQuestion(player_name, available_questions) => {
                     let msg = format!("{} {}", player_name, CHOOSE_QUESTION);
-                    let mut msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
+                    let mut msg = SendMessage::new(config.game_chat, msg);
                     let inline_keyboard = question_inline_keyboard(&available_questions);
                     let msg = msg.reply_markup(inline_keyboard);
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::AskAdminYesNo(question) => {
-                    let chat = ChatId::from(ADMIN_ID);
                     let inline_keyboard = reply_markup!(inline_keyboard,
                         ["Yes" callback ANSWER_YES, "No" callback ANSWER_NO]
                     );
-                    let mut msg = SendMessage::new(chat, question);
+                    let mut msg = SendMessage::new(config.admin_chat, question);
                     let msg = msg.reply_markup(inline_keyboard);
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::SendToAdmin(msg) => {
-                    let msg = SendMessage::new(ChatId::from(ADMIN_ID), msg);
+                    let msg = SendMessage::new(config.admin_chat, msg);
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::StopTimer => {
