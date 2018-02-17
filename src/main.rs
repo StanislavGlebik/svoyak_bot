@@ -36,9 +36,7 @@ const ANSWER_NO: &str = "AnswerNo";
 pub const ADMIN_ID: i64 = 125732128;
 pub const GAME_CHAT_ID: i64 = -272387150;
 
-fn question_inline_keyboard(
-    questions: &HashMap<String, Vec<usize>>,
-) -> InlineKeyboardMarkup {
+fn question_inline_keyboard(questions: &HashMap<String, Vec<usize>>) -> InlineKeyboardMarkup {
     let mut markup = InlineKeyboardMarkup::new();
     {
         for (topic, costs) in questions {
@@ -138,6 +136,16 @@ fn parse_callback(data: &String) -> CallbackMessage {
 }
 
 
+fn convert_future<I, E, F>(future: F) -> Box<Future<Item = (), Error = Error>>
+where
+    F: Future<Item = I, Error = E> + 'static,
+{
+    Box::new(future.map(|_| ()).map_err(|_err| {
+        let msg = format!("error happened");
+        err_msg(msg)
+    }))
+}
+
 fn main() {
     let mut core = Core::new().unwrap();
     let token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
@@ -214,32 +222,28 @@ fn main() {
         let res_future: Result<_, Error> = Ok(());
         let mut res_future: Box<Future<Item=(), Error=Error>> = Box::new(res_future.into_future());
         for r in res {
-            match r {
+            let fut = match r {
                 gamestate::UiRequest::SendTextToMainChat(msg) => {
                     let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
-                    api.spawn(msg);
+                    convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::SendTextToMainChatWithDelay(msg, delay) => {
                     let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
                     let timeout = Timeout::new(delay, &handle).expect("cannot create timer");
-                    let sendfut = api.send(msg).map(|_| ()).map_err(|_err| err_msg("error"));
-                    let sendfut = timeout.map_err(|_| err_msg("timeout error")).and_then(|_| sendfut);
-                    res_future = Box::new(res_future.and_then(|_| sendfut));
+                    let sendfut = api.send(msg).map_err(|_| err_msg("send failed"));
+                    let fut = timeout.map_err(|_| err_msg("timeout error")).and_then(|_| sendfut);
+                    convert_future(fut)
                 }
                 gamestate::UiRequest::Timeout(duration) => {
                     let timer = Timeout::new(duration, &handle).expect("cannot create timer");
-                    let send_fut = sender.clone().send(Some(timer))
-                        .map(|_| ())
-                        .map_err(|err| err_msg(format!("{}", err)));
-
-                    res_future = Box::new(res_future.and_then(|_| send_fut));
+                    convert_future(sender.clone().send(Some(timer)))
                 }
                 gamestate::UiRequest::ChooseQuestion(player_name, available_questions) => {
                     let msg = format!("{} {}", player_name, CHOOSE_QUESTION);
                     let mut msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
                     let inline_keyboard = question_inline_keyboard(&available_questions);
                     let msg = msg.reply_markup(inline_keyboard);
-                    api.spawn(msg);
+                    convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::AskAdminYesNo(question) => {
                     let chat = ChatId::from(ADMIN_ID);
@@ -248,18 +252,17 @@ fn main() {
                     );
                     let mut msg = SendMessage::new(chat, question);
                     let msg = msg.reply_markup(inline_keyboard);
-                    api.spawn(msg);
+                    convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::SendToAdmin(msg) => {
                     let msg = SendMessage::new(ChatId::from(ADMIN_ID), msg);
-                    api.spawn(msg);
+                    convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::StopTimer => {
-                    let send_fut = sender.clone().send(None).map(|_| ())
-                        .map_err(|err| err_msg(format!("{}", err)));
-                    res_future = Box::new(res_future.and_then(|_| send_fut));
+                    convert_future(sender.clone().send(None))
                 }
-            }
+            };
+            res_future = convert_future(res_future.and_then(|_| fut));
         }
 
         res_future

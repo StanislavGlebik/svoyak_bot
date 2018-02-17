@@ -44,4 +44,4 @@ impl Hash for Player {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
-} 
+}

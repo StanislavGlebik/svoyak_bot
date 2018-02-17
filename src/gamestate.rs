@@ -43,17 +43,47 @@ impl GameState {
         questions.insert(String::from("Movies"), vec![100, 200, 300, 400, 500]);
 
         let mut question_storage = HashMap::new();
-        question_storage.insert((String::from("Sport"), 100), Question::new("2 * 2 = ?", "4"));
-        question_storage.insert((String::from("Sport"), 200), Question::new("3 * 2 = ?", "6"));
-        question_storage.insert((String::from("Sport"), 300), Question::new("4 * 2 = ?", "8"));
-        question_storage.insert((String::from("Sport"), 400), Question::new("5 * 2 = ?", "10"));
-        question_storage.insert((String::from("Sport"), 500), Question::new("6 * 2 = ?", "12"));
+        question_storage.insert(
+            (String::from("Sport"), 100),
+            Question::new("2 * 2 = ?", "4"),
+        );
+        question_storage.insert(
+            (String::from("Sport"), 200),
+            Question::new("3 * 2 = ?", "6"),
+        );
+        question_storage.insert(
+            (String::from("Sport"), 300),
+            Question::new("4 * 2 = ?", "8"),
+        );
+        question_storage.insert(
+            (String::from("Sport"), 400),
+            Question::new("5 * 2 = ?", "10"),
+        );
+        question_storage.insert(
+            (String::from("Sport"), 500),
+            Question::new("6 * 2 = ?", "12"),
+        );
 
-        question_storage.insert((String::from("Movies"), 100), Question::new("2 * 2 = ?", "4"));
-        question_storage.insert((String::from("Movies"), 200), Question::new("3 * 2 = ?", "6"));
-        question_storage.insert((String::from("Movies"), 300), Question::new("4 * 2 = ?", "8"));
-        question_storage.insert((String::from("Movies"), 400), Question::new("5 * 2 = ?", "10"));
-        question_storage.insert((String::from("Movies"), 500), Question::new("6 * 2 = ?", "12"));
+        question_storage.insert(
+            (String::from("Movies"), 100),
+            Question::new("2 * 2 = ?", "4"),
+        );
+        question_storage.insert(
+            (String::from("Movies"), 200),
+            Question::new("3 * 2 = ?", "6"),
+        );
+        question_storage.insert(
+            (String::from("Movies"), 300),
+            Question::new("4 * 2 = ?", "8"),
+        );
+        question_storage.insert(
+            (String::from("Movies"), 400),
+            Question::new("5 * 2 = ?", "10"),
+        );
+        question_storage.insert(
+            (String::from("Movies"), 500),
+            Question::new("6 * 2 = ?", "12"),
+        );
 
         Self {
             admin_user,
@@ -99,12 +129,12 @@ impl GameState {
 
         self.current_player = self.players.keys().next().cloned();
         let current_player_name = match self.current_player {
-            Some(ref player) => {
-                player.name()
-            }
+            Some(ref player) => player.name(),
             None => {
                 return vec![
-                    UiRequest::SendTextToMainChat(String::from("Ни одного игрока не зарегистрировалось!")),
+                    UiRequest::SendTextToMainChat(String::from(
+                        "Ни одного игрока не зарегистрировалось!",
+                    )),
                 ];
             }
         };
@@ -115,7 +145,9 @@ impl GameState {
         } else {
             self.state = State::Pause;
             vec![
-                UiRequest::SendTextToMainChat(format!("Игру начинает {}", current_player_name)),
+                UiRequest::SendTextToMainChat(
+                    format!("Игру начинает {}", current_player_name)
+                ),
             ]
         }
     }
@@ -134,11 +166,10 @@ impl GameState {
                         UiRequest::AskAdminYesNo("Correct answer?".to_string()),
                     ]
                 }
-                None => {
-                   vec![]
-                }
+                None => vec![],
             }
         } else {
+            println!("bad state");
             vec![]
         }
     }
@@ -149,9 +180,7 @@ impl GameState {
             return vec![];
         }
         let current_player_name = match self.current_player {
-            Some(ref player) => {
-                player.name().clone()
-            }
+            Some(ref player) => player.name().clone(),
             None => {
                 println!("internal error: no current player!");
                 return vec![];
@@ -160,7 +189,7 @@ impl GameState {
 
         self.state = State::WaitingForQuestion;
         vec![
-            UiRequest::ChooseQuestion(current_player_name, self.questions.clone())
+            UiRequest::ChooseQuestion(current_player_name, self.questions.clone()),
         ]
     }
 
@@ -174,17 +203,17 @@ impl GameState {
                 Ok(_) => {
                     self.state = State::WaitingForQuestion;
                     let current_player_name = match self.current_player {
-                        Some(ref player) => {
-                            player.name()
-                        }
+                        Some(ref player) => player.name(),
                         None => {
                             return vec![];
                         }
                     };
-                    let msg = format!("{}\nИгру продолжает {}", CORRECT_ANSWER, current_player_name);
-                    vec![
-                        UiRequest::SendTextToMainChat(msg),
-                    ]
+                    let msg = format!(
+                        "{}\nИгру продолжает {}",
+                        CORRECT_ANSWER,
+                        current_player_name
+                    );
+                    vec![UiRequest::SendTextToMainChat(msg)]
                 }
                 Err(err_msg) => {
                     println!("{}", err_msg);
@@ -224,7 +253,9 @@ impl GameState {
     }
 
     pub fn timeout(&mut self) -> Vec<UiRequest> {
+        println!("timeout");
         if let State::Falsestart(question, cost) = self.state.clone() {
+            println!("falsestart");
             self.state = State::CanAnswer(question.clone(), cost);
             return vec![
                 UiRequest::SendTextToMainChat(String::from("!")),
@@ -235,24 +266,27 @@ impl GameState {
         if let State::CanAnswer(question, _) = self.state.clone() {
             self.state = State::Pause;
             let current_player_name = match self.current_player {
-                Some(ref player) => {
-                    player.name()
-                }
-                None => {
-                    return vec![]
-                }
+                Some(ref player) => player.name(),
+                None => return vec![],
             };
-            let msg = format!("Время вышло!\nПравильный ответ: {}\nСледующий вопрос выбирает {}", question.question(), current_player_name);
-            vec![
-                UiRequest::SendTextToMainChat(msg),
-            ]
+            let msg = format!(
+                "Время вышло!\nПравильный ответ: {}\nСледующий вопрос выбирает {}",
+                question.question(),
+                current_player_name
+            );
+            vec![UiRequest::SendTextToMainChat(msg)]
         } else {
             println!("unexpected timeout");
             vec![]
         }
     }
 
-    pub fn select_question<T: ToString>(&mut self, topic: T, cost: usize, user: UserId) -> Vec<UiRequest> {
+    pub fn select_question<T: ToString>(
+        &mut self,
+        topic: T,
+        cost: usize,
+        user: UserId,
+    ) -> Vec<UiRequest> {
         if self.state != State::WaitingForQuestion {
             println!("unexpected question selection");
             return vec![];
@@ -271,13 +305,26 @@ impl GameState {
                     match self.question_storage.get(&(topic.clone(), cost)) {
                         Some(question) => {
                             self.state = State::Falsestart(question.clone(), cost as i64);
-                            let main_chat_message = format!("Играем тему {}, вопрос за {}", topic, cost);
+                            let main_chat_message = format!(
+                                "Играем тему {}, вопрос за {}",
+                                topic,
+                                cost
+                            );
                             let question_msg = format!("{}", question.question());
+                            let delay_before_question_secs = 5;
+                            let delay_falsestart_secs = delay_before_question_secs + 1;
                             vec![
-                                UiRequest::SendToAdmin(format!("question: {}\nanswer: {}", question.question(), question.answer())),
+                                UiRequest::SendToAdmin(format!(
+                                    "question: {}\nanswer: {}",
+                                    question.question(),
+                                    question.answer()
+                                )),
                                 UiRequest::SendTextToMainChat(main_chat_message),
-                                UiRequest::SendTextToMainChatWithDelay(question_msg, Duration::from_secs(5)),
-                                UiRequest::Timeout(Duration::new(1, 0)),
+                                UiRequest::SendTextToMainChatWithDelay(
+                                    question_msg,
+                                    Duration::from_secs(delay_before_question_secs)
+                                ),
+                                UiRequest::Timeout(Duration::from_secs(delay_falsestart_secs)),
                             ]
                         }
                         None => {
@@ -302,25 +349,19 @@ impl GameState {
         for (player, score) in self.players.iter() {
             res += &format!("{}: {}\n", player.name(), score);
         }
-        vec![
-            UiRequest::SendTextToMainChat(format!("{}", res))
-        ]
+        vec![UiRequest::SendTextToMainChat(format!("{}", res))]
     }
 
     pub fn current_player(&mut self, _user: UserId) -> Vec<UiRequest> {
         let mut res = String::new();
         match self.current_player {
-            Some(ref player) => {
-                res += &player.name()
-            }
+            Some(ref player) => res += &player.name(),
             None => {
                 res += "No current player!";
             }
         }
 
-        vec![
-            UiRequest::SendTextToMainChat(format!("{}", res))
-        ]
+        vec![UiRequest::SendTextToMainChat(format!("{}", res))]
     }
 
     fn find_player(&self, id: UserId) -> Option<&Player> {
@@ -340,25 +381,17 @@ impl GameState {
                         *val += cost;
                         Ok(())
                     }
-                    None => {
-                        Err("current player is not in list of players".to_string())
-                    }
+                    None => Err("current player is not in list of players".to_string()),
                 }
             }
-            None => {
-                Err("internal error: current player is None!".to_string())
-            }
+            None => Err("internal error: current player is None!".to_string()),
         }
     }
 
     fn is_current_player(&self, id: UserId) -> bool {
         match self.current_player {
-            Some(ref p) => {
-                p.id() == id
-            }
-            None => {
-                false
-            }
+            Some(ref p) => p.id() == id,
+            None => false,
         }
     }
 
@@ -441,9 +474,7 @@ mod test {
         game_state.next_question(admin);
         game_state.select_question("Sport", 100, p1);
         match game_state.get_state() {
-            &State::Falsestart(_, _) => {
-
-            }
+            &State::Falsestart(_, _) => {}
             _ => {
                 assert!(false);
             }
