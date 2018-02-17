@@ -2,6 +2,8 @@ extern crate failure;
 extern crate futures;
 #[macro_use]
 extern crate telegram_bot;
+#[macro_use]
+extern crate serde_derive;
 extern crate tokio_core;
 
 use std::collections::BTreeSet;
@@ -26,15 +28,12 @@ mod messages;
 mod player;
 mod timeout_stream;
 mod question;
+mod telegram_config;
 
 use messages::*;
 
-
 const ANSWER_YES: &str = "AnswerYes";
 const ANSWER_NO: &str = "AnswerNo";
-
-pub const ADMIN_ID: i64 = 125732128;
-pub const GAME_CHAT_ID: i64 = -272387150;
 
 fn question_inline_keyboard(questions: &HashMap<String, Vec<usize>>) -> InlineKeyboardMarkup {
     let mut markup = InlineKeyboardMarkup::new();
@@ -151,7 +150,11 @@ fn main() {
     let token = env::var("TELEGRAM_BOT_TOKEN").unwrap();
     let api = Api::configure(token.clone()).build(core.handle()).unwrap();
 
-    let admin_user: UserId = UserId::from(ADMIN_ID);
+    let instance_config = telegram_config::InstanceConfig::new(
+        Some(String::from("/home/kolesov93/Programming/svoyak_bot/configs/kolesov93_debug.json"))
+    );
+
+    let admin_user: UserId = UserId::from(instance_config.admin_id);
 
     // Fetch new updates via long poll method
     let (sender, receiver) = mpsc::channel::<Option<Timeout>>(1);
@@ -224,11 +227,11 @@ fn main() {
         for r in res {
             let fut = match r {
                 gamestate::UiRequest::SendTextToMainChat(msg) => {
-                    let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
+                    let msg = SendMessage::new(ChatId::from(instance_config.game_chat_id), msg);
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::SendTextToMainChatWithDelay(msg, delay) => {
-                    let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
+                    let msg = SendMessage::new(ChatId::from(instance_config.game_chat_id), msg);
                     let timeout = Timeout::new(delay, &handle).expect("cannot create timer");
                     let sendfut = api.send(msg).map_err(|_| err_msg("send failed"));
                     let fut = timeout.map_err(|_| err_msg("timeout error")).and_then(|_| sendfut);
@@ -240,13 +243,13 @@ fn main() {
                 }
                 gamestate::UiRequest::ChooseQuestion(player_name, available_questions) => {
                     let msg = format!("{} {}", player_name, CHOOSE_QUESTION);
-                    let mut msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
+                    let mut msg = SendMessage::new(ChatId::from(instance_config.game_chat_id), msg);
                     let inline_keyboard = question_inline_keyboard(&available_questions);
                     let msg = msg.reply_markup(inline_keyboard);
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::AskAdminYesNo(question) => {
-                    let chat = ChatId::from(ADMIN_ID);
+                    let chat = ChatId::from(instance_config.admin_id);
                     let inline_keyboard = reply_markup!(inline_keyboard,
                         ["Yes" callback ANSWER_YES, "No" callback ANSWER_NO]
                     );
@@ -255,7 +258,7 @@ fn main() {
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::SendToAdmin(msg) => {
-                    let msg = SendMessage::new(ChatId::from(ADMIN_ID), msg);
+                    let msg = SendMessage::new(ChatId::from(instance_config.admin_id), msg);
                     convert_future(api.send(msg))
                 }
                 gamestate::UiRequest::StopTimer => {
