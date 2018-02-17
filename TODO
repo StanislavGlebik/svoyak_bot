@@ -1,0 +1,9 @@
+1. Configs:
+  a. Json?
+  b. Using serde library
+  c. Config options: max/min num of players, topics, num of tours
+2. QuestionStorage:
+  a. Simple file-based storage: topic name is a name of the folder with five questions/answers inside
+3. Add a delay between the selection of the question and asking the question
+4. Delete used question selection menus
+5. Question selection menu doesn't work well with long topic names - need to fix it
