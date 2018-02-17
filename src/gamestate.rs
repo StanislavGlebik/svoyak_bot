@@ -28,6 +28,7 @@ pub struct GameState {
 
 pub enum UiRequest {
     SendTextToMainChat(String),
+    SendTextToMainChatWithDelay(String, Duration),
     Timeout(Duration),
     ChooseQuestion(String, HashMap<String, Vec<usize>>),
     AskAdminYesNo(String),
@@ -270,10 +271,12 @@ impl GameState {
                     match self.question_storage.get(&(topic.clone(), cost)) {
                         Some(question) => {
                             self.state = State::Falsestart(question.clone(), cost as i64);
-                            let main_chat_message = format!("Играем тему {}, вопрос за {}\n{}", topic, cost, question.question());
+                            let main_chat_message = format!("Играем тему {}, вопрос за {}", topic, cost);
+                            let question_msg = format!("{}", question.question());
                             vec![
                                 UiRequest::SendToAdmin(format!("question: {}\nanswer: {}", question.question(), question.answer())),
                                 UiRequest::SendTextToMainChat(main_chat_message),
+                                UiRequest::SendTextToMainChatWithDelay(question_msg, Duration::from_secs(5)),
                                 UiRequest::Timeout(Duration::new(1, 0)),
                             ]
                         }

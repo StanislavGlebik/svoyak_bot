@@ -33,6 +33,8 @@ use messages::*;
 const ANSWER_YES: &str = "AnswerYes";
 const ANSWER_NO: &str = "AnswerNo";
 
+pub const ADMIN_ID: i64 = 125732128;
+pub const GAME_CHAT_ID: i64 = -272387150;
 
 fn question_inline_keyboard(
     questions: &HashMap<String, Vec<usize>>,
@@ -216,6 +218,13 @@ fn main() {
                 gamestate::UiRequest::SendTextToMainChat(msg) => {
                     let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
                     api.spawn(msg);
+                }
+                gamestate::UiRequest::SendTextToMainChatWithDelay(msg, delay) => {
+                    let msg = SendMessage::new(ChatId::from(GAME_CHAT_ID), msg);
+                    let timeout = Timeout::new(delay, &handle).expect("cannot create timer");
+                    let sendfut = api.send(msg).map(|_| ()).map_err(|_err| err_msg("error"));
+                    let sendfut = timeout.map_err(|_| err_msg("timeout error")).and_then(|_| sendfut);
+                    res_future = Box::new(res_future.and_then(|_| sendfut));
                 }
                 gamestate::UiRequest::Timeout(duration) => {
                     let timer = Timeout::new(duration, &handle).expect("cannot create timer");

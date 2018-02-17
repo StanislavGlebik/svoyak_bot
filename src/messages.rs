@@ -1,5 +1,3 @@
-pub const ADMIN_ID: i64 = 130958892;
-pub const GAME_CHAT_ID: i64 = -272387150;
 pub const BEGIN_CMD: &str = "Начинаем";
 
 // TODO(stash): normal alignment
