@@ -153,20 +153,7 @@ fn main() {
 
     let mut gamestate = gamestate::GameState::new(admin_user);
 
-    println!("res");
-    let fut = requests_stream.then(|res| {
-        println!("udpate");
-        match res {
-            Ok(res) => {
-                Ok(res)
-            }
-            Err(err) => {
-                println!("err: {}", err);
-                Ok(Err(()))
-            }
-        }
-    }).for_each(move |request| {
-        println!("here");
+    let fut = requests_stream.for_each(move |request| {
         let res = match request {
             Ok(telegram_update) => {
                 match telegram_update.kind {
