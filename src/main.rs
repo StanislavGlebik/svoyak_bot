@@ -1,3 +1,5 @@
+extern crate csv;
+#[macro_use]
 extern crate failure;
 extern crate futures;
 #[macro_use]
@@ -32,7 +34,7 @@ mod telegram_config;
 mod questionsstorage;
 
 use messages::*;
-use questionsstorage::{FakeQuestionsStorage, QuestionsStorage};
+use questionsstorage::{CsvQuestionsStorage, QuestionsStorage};
 
 const TOKEN_VAR: &str = "TELEGRAM_BOT_TOKEN";
 const CONFIG_VAR: &str = "GAME_CONFIG";
@@ -166,7 +168,9 @@ fn main() {
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
 
     eprintln!("Game is ready to start!");
-    let question_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+    let question_storage: Box<QuestionsStorage> = Box::new(
+        CsvQuestionsStorage::new(config.questions_storage_path.clone()).expect("cannot open questions storage")
+    );
     let mut gamestate = gamestate::GameState::new(config.admin_user, question_storage);
 
     let fut = requests_stream.for_each(move |request| {

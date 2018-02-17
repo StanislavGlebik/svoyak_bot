@@ -40,8 +40,8 @@ pub enum UiRequest {
 impl GameState {
     pub fn new(admin_user: UserId, questions_storage: Box<QuestionsStorage>) -> Self {
         let mut questions = HashMap::new();
-        questions.insert(String::from("Sport"), vec![100, 200, 300, 400, 500]);
-        questions.insert(String::from("Movies"), vec![100, 200, 300, 400, 500]);
+        questions.insert(String::from("Sport"), vec![1, 2, 3, 4, 5]);
+        questions.insert(String::from("Movies"), vec![1, 2, 3, 4, 5]);
 
         Self {
             admin_user,

@@ -7,13 +7,15 @@ use telegram_bot;
 #[derive(Serialize, Deserialize)]
 struct RawConfig {
     pub admin_id: i64,
-    pub game_chat_id: i64
+    pub game_chat_id: i64,
+    pub questions_storage_path: String,
 }
 
 pub struct Config {
     pub admin_user : telegram_bot::UserId,  
     pub admin_chat : telegram_bot::ChatId,
-    pub game_chat : telegram_bot::ChatId 
+    pub game_chat : telegram_bot::ChatId,
+    pub questions_storage_path: String,
 }
 
 const DEFAULT_ADMIN_ID: i64 = 125732128;
@@ -36,7 +38,8 @@ impl RawConfig {
                 eprintln!("Loading default configuration");
                 Self {
                     admin_id: DEFAULT_ADMIN_ID,
-                    game_chat_id: DEFAULT_GAME_CHAT_ID
+                    game_chat_id: DEFAULT_GAME_CHAT_ID,
+                    questions_storage_path: "storage.csv".into(),
                 }
             }
         }
@@ -51,7 +54,8 @@ impl Config {
         Config {
             admin_user: telegram_bot::UserId::from(config.admin_id),
             admin_chat: telegram_bot::ChatId::from(config.admin_id),
-            game_chat: telegram_bot::ChatId::from(config.game_chat_id)
+            game_chat: telegram_bot::ChatId::from(config.game_chat_id),
+            questions_storage_path: config.questions_storage_path,
         }
     }
 }
