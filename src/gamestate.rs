@@ -6,6 +6,7 @@ use telegram_bot::UserId;
 use messages::*;
 use player::Player;
 use question::Question;
+use questionsstorage::QuestionsStorage;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
@@ -23,7 +24,7 @@ pub struct GameState {
     players: HashMap<Player, i64>,
     current_player: Option<Player>,
     questions: HashMap<String, Vec<usize>>,
-    question_storage: HashMap<(String, usize), Question>,
+    questions_storage: Box<QuestionsStorage>,
 }
 
 pub enum UiRequest {
@@ -37,53 +38,10 @@ pub enum UiRequest {
 }
 
 impl GameState {
-    pub fn new(admin_user: UserId) -> Self {
+    pub fn new(admin_user: UserId, questions_storage: Box<QuestionsStorage>) -> Self {
         let mut questions = HashMap::new();
         questions.insert(String::from("Sport"), vec![100, 200, 300, 400, 500]);
         questions.insert(String::from("Movies"), vec![100, 200, 300, 400, 500]);
-
-        let mut question_storage = HashMap::new();
-        question_storage.insert(
-            (String::from("Sport"), 100),
-            Question::new("2 * 2 = ?", "4"),
-        );
-        question_storage.insert(
-            (String::from("Sport"), 200),
-            Question::new("3 * 2 = ?", "6"),
-        );
-        question_storage.insert(
-            (String::from("Sport"), 300),
-            Question::new("4 * 2 = ?", "8"),
-        );
-        question_storage.insert(
-            (String::from("Sport"), 400),
-            Question::new("5 * 2 = ?", "10"),
-        );
-        question_storage.insert(
-            (String::from("Sport"), 500),
-            Question::new("6 * 2 = ?", "12"),
-        );
-
-        question_storage.insert(
-            (String::from("Movies"), 100),
-            Question::new("2 * 2 = ?", "4"),
-        );
-        question_storage.insert(
-            (String::from("Movies"), 200),
-            Question::new("3 * 2 = ?", "6"),
-        );
-        question_storage.insert(
-            (String::from("Movies"), 300),
-            Question::new("4 * 2 = ?", "8"),
-        );
-        question_storage.insert(
-            (String::from("Movies"), 400),
-            Question::new("5 * 2 = ?", "10"),
-        );
-        question_storage.insert(
-            (String::from("Movies"), 500),
-            Question::new("6 * 2 = ?", "12"),
-        );
 
         Self {
             admin_user,
@@ -91,7 +49,7 @@ impl GameState {
             players: HashMap::new(),
             current_player: None,
             questions,
-            question_storage,
+            questions_storage,
         }
     }
 
@@ -302,7 +260,7 @@ impl GameState {
             Some(costs) => {
                 if costs.contains(&cost) {
                     costs.retain(|elem| elem != &cost);
-                    match self.question_storage.get(&(topic.clone(), cost)) {
+                    match self.questions_storage.get(topic.clone(), cost) {
                         Some(question) => {
                             self.state = State::Falsestart(question.clone(), cost as i64);
                             let main_chat_message = format!(
@@ -429,10 +387,16 @@ impl GameState {
 #[cfg(test)]
 mod test {
     use super::*;
+    use questionsstorage::FakeQuestionsStorage;
+
+    fn create_game_state(user: UserId) -> GameState {
+        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        GameState::new(user, questions_storage)
+    }
 
     #[test]
     fn test_add_player() {
-        let mut game_state = GameState::new(UserId::from(1));
+        let mut game_state = create_game_state(UserId::from(1));
         game_state.add_player(UserId::from(1), String::from("new"));
         game_state.add_player(UserId::from(1), String::from("new"));
         assert_eq!(game_state.get_players().len(), 1);
@@ -440,7 +404,7 @@ mod test {
 
     #[test]
     fn test_start_game() {
-        let mut game_state = GameState::new(UserId::from(1));
+        let mut game_state = create_game_state(UserId::from(1));
         assert_eq!(game_state.get_state(), &State::WaitingForPlayersToJoin);
 
         game_state.start(UserId::from(2));
@@ -462,7 +426,7 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
-        let mut game_state = GameState::new(admin);
+        let mut game_state = create_game_state(admin);
         game_state.add_player(p1, String::from("new_1"));
         game_state.add_player(p2, String::from("new_2"));
         game_state.start(admin);

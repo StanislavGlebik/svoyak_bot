@@ -29,8 +29,10 @@ mod player;
 mod timeout_stream;
 mod question;
 mod telegram_config;
+mod questionsstorage;
 
 use messages::*;
+use questionsstorage::{FakeQuestionsStorage, QuestionsStorage};
 
 const TOKEN_VAR: &str = "TELEGRAM_BOT_TOKEN";
 const CONFIG_VAR: &str = "GAME_CONFIG";
@@ -163,9 +165,9 @@ fn main() {
     let updates_stream = api.stream();
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
 
-    let mut gamestate = gamestate::GameState::new(config.admin_user);
-
     eprintln!("Game is ready to start!");
+    let question_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+    let mut gamestate = gamestate::GameState::new(config.admin_user, question_storage);
 
     let fut = requests_stream.for_each(move |request| {
         let res = match request {
