@@ -151,7 +151,9 @@ impl GameState {
         };
 
         self.state = State::WaitingForTopic;
-        let topics: Vec<_> = self.questions.iter().map(|(topic, _)| topic.clone()).collect();
+        let topics: Vec<_> = self.questions.iter()
+            .filter(|&(_, costs)| !costs.is_empty())
+            .map(|(topic, _)| topic.clone()).collect();
         vec![
             UiRequest::ChooseTopic(current_player_name, topics),
         ]
