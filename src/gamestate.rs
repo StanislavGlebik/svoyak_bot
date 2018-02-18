@@ -11,6 +11,7 @@ use questionsstorage::QuestionsStorage;
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
     WaitingForPlayersToJoin,
+    WaitingForTopic,
     WaitingForQuestion,
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
@@ -31,7 +32,8 @@ pub enum UiRequest {
     SendTextToMainChat(String),
     SendTextToMainChatWithDelay(String, Duration),
     Timeout(Duration),
-    ChooseQuestion(String, HashMap<String, Vec<usize>>),
+    ChooseTopic(String, Vec<String>),
+    ChooseQuestion(String, Vec<usize>),
     AskAdminYesNo(String),
     SendToAdmin(String),
     StopTimer,
@@ -42,6 +44,9 @@ impl GameState {
         let mut questions = HashMap::new();
         questions.insert(String::from("Sport"), vec![1, 2, 3, 4, 5]);
         questions.insert(String::from("Movies"), vec![1, 2, 3, 4, 5]);
+        questions.insert(String::from("Anthropology"), vec![1, 2, 3, 4, 5]);
+        questions.insert(String::from("Очевидное и невероятное"), vec![1, 2, 3, 4, 5]);
+        questions.insert(String::from("Знай наших"), vec![1, 2, 3, 4, 5]);
 
         Self {
             admin_user,
@@ -145,9 +150,10 @@ impl GameState {
             }
         };
 
-        self.state = State::WaitingForQuestion;
+        self.state = State::WaitingForTopic;
+        let topics: Vec<_> = self.questions.iter().map(|(topic, _)| topic.clone()).collect();
         vec![
-            UiRequest::ChooseQuestion(current_player_name, self.questions.clone()),
+            UiRequest::ChooseTopic(current_player_name, topics),
         ]
     }
 
@@ -159,7 +165,7 @@ impl GameState {
         if let State::Answering(_, cost) = self.state {
             match self.update_current_player_score(cost) {
                 Ok(_) => {
-                    self.state = State::WaitingForQuestion;
+                    self.state = State::WaitingForTopic;
                     let current_player_name = match self.current_player {
                         Some(ref player) => player.name(),
                         None => {
@@ -236,6 +242,41 @@ impl GameState {
         } else {
             println!("unexpected timeout");
             vec![]
+        }
+    }
+
+    pub fn select_topic<T: ToString>(
+        &mut self,
+        topic: T,
+        user: UserId,
+    ) -> Vec<UiRequest> {
+        // TODO(stas): make it possible to deselect the topic
+        if self.state != State::WaitingForTopic {
+            println!("unexpected question selection");
+            return vec![];
+        }
+
+        if !self.is_current_player(user) {
+            println!("only current player can select questions");
+            return vec![];
+        }
+
+        let topic = topic.to_string();
+        match self.questions.get(&topic) {
+            Some(costs) => {
+                if !costs.is_empty() {
+                    self.state = State::WaitingForQuestion;
+                    vec![
+                        UiRequest::ChooseQuestion(topic.clone(), costs.clone())
+                    ]
+                } else {
+                    vec![]
+                }
+            }
+            None => {
+                println!("unknown topic");
+                return vec![];
+            }
         }
     }
 
@@ -430,13 +471,27 @@ mod test {
         game_state.add_player(p1, String::from("new_1"));
         game_state.add_player(p2, String::from("new_2"));
         game_state.start(admin);
+        match game_state.get_state() {
+            &State::Pause => {}
+            _ => {
+                assert!(false);
+            }
+        }
 
         assert_eq!(game_state.get_player_score(p1), Some(0));
         assert_eq!(game_state.get_player_score(p2), Some(0));
         game_state.set_current_player(p1).unwrap();
 
         game_state.next_question(admin);
-        game_state.select_question("Sport", 100, p1);
+        game_state.select_topic("Sport", p1);
+        match game_state.get_state() {
+            &State::WaitingForQuestion => {}
+            _ => {
+                assert!(false);
+            }
+        }
+
+        game_state.select_question("Sport", 1, p1);
         match game_state.get_state() {
             &State::Falsestart(_, _) => {}
             _ => {
@@ -449,17 +504,19 @@ mod test {
         game_state.message(p1, String::from("1"));
         game_state.yes_reply(admin);
 
-        assert_eq!(game_state.get_player_score(p1), Some(100));
+        assert_eq!(game_state.get_player_score(p1), Some(1));
         assert_eq!(game_state.get_player_score(p2), Some(0));
         assert_eq!(game_state.get_current_player().map(|p| p.id()), Some(p1));
 
         game_state.next_question(admin);
-        game_state.select_question("Sport", 100, p1);
-        // Cannot select already selected question
-        assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
 
-        game_state.select_question("Rock'n'roll", 100, p1);
+        game_state.select_topic("Rock'n'roll", p1);
         // Cannot select non-existing topic
+        assert_eq!(game_state.get_state(), &State::WaitingForTopic);
+
+        game_state.select_topic("Sport", p1);
+        game_state.select_question("Sport", 1, p1);
+        // Cannot select already selected question
         assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
 
         game_state.select_question("Sport", 200, p2);

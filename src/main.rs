@@ -15,9 +15,9 @@ use std::thread;
 use std::time::Duration;
 
 use failure::{err_msg, Error};
-use futures::{Future, IntoFuture, Sink, Stream};
+use futures::{Future, IntoFuture, Sink, stream, Stream};
 use futures::sync::mpsc;
-use futures::future::Either;
+use futures::future::{Either, join_all};
 use tokio_core::reactor::{Core, Timeout};
 
 use telegram_bot::{Api, CanReplySendMessage, ChatId, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -42,19 +42,28 @@ const CONFIG_VAR: &str = "GAME_CONFIG";
 const ANSWER_YES: &str = "AnswerYes";
 const ANSWER_NO: &str = "AnswerNo";
 
-fn question_inline_keyboard(questions: &HashMap<String, Vec<usize>>) -> InlineKeyboardMarkup {
-    let mut markup = InlineKeyboardMarkup::new();
+fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
+    let mut inline_markup = InlineKeyboardMarkup::new();
     {
-        for (topic, costs) in questions {
-            let row = markup.add_empty_row();
-            row.push(InlineKeyboardButton::callback(topic, "fakedata"));
-            for cost in costs {
-                let data = format!("/question{}_{}", topic, cost);
-                row.push(InlineKeyboardButton::callback(format!("{}", cost), data));
-            }
+        for topic in topics {
+            let data = format!("/topic{}", topic);
+            let row = inline_markup.add_empty_row();
+            row.push(InlineKeyboardButton::callback(format!("{}", topic), data));
         }
     }
-    markup
+    inline_markup
+}
+
+fn questioncosts_inline_keyboard(topic: String, costs: Vec<usize>) -> InlineKeyboardMarkup {
+    let mut inline_markup = InlineKeyboardMarkup::new();
+    {
+        for cost in costs {
+            let data = format!("/question{}_{}", topic, cost);
+            let row = inline_markup.add_empty_row();
+            row.push(InlineKeyboardButton::callback(format!("{}", cost), data));
+        }
+    }
+    inline_markup
 }
 
 fn merge_updates_and_timeouts(
@@ -81,6 +90,7 @@ enum TextMessage {
 }
 
 enum CallbackMessage {
+    SelectedTopic(String),
     SelectedQuestion(String, usize),
     AnswerYes,
     AnswerNo,
@@ -130,6 +140,12 @@ fn parse_callback(data: &String) -> CallbackMessage {
             return CallbackMessage::Unknown;
         }
     }
+
+    if data.starts_with("/topic") {
+        let data = data.trim_left_matches("/topic");
+        return CallbackMessage::SelectedTopic(data.into());
+    }
+
     if data == ANSWER_YES {
         return CallbackMessage::AnswerYes;
     }
@@ -145,9 +161,10 @@ fn parse_callback(data: &String) -> CallbackMessage {
 fn convert_future<I, E, F>(future: F) -> Box<Future<Item = (), Error = Error>>
 where
     F: Future<Item = I, Error = E> + 'static,
+    E: std::fmt::Display,
 {
-    Box::new(future.map(|_| ()).map_err(|_err| {
-        let msg = format!("error happened");
+    Box::new(future.map(|_| ()).map_err(|err| {
+        let msg = format!("error happened: {}", err);
         err_msg(msg)
     }))
 }
@@ -207,6 +224,9 @@ fn main() {
                     UpdateKind::CallbackQuery(callback) => {
                         let data = callback.data;
                         match parse_callback(&data) {
+                            CallbackMessage::SelectedTopic(topic) => {
+                                gamestate.select_topic(topic, callback.from.id)
+                            }
                             CallbackMessage::SelectedQuestion(topic, cost) => {
                                 gamestate.select_question(topic, cost, callback.from.id)
                             }
@@ -248,12 +268,25 @@ fn main() {
                     let timer = Timeout::new(duration, &handle).expect("cannot create timer");
                     convert_future(sender.clone().send(Some(timer)))
                 }
-                gamestate::UiRequest::ChooseQuestion(player_name, available_questions) => {
-                    let msg = format!("{} {}", player_name, CHOOSE_QUESTION);
-                    let mut msg = SendMessage::new(config.game_chat, msg);
-                    let inline_keyboard = question_inline_keyboard(&available_questions);
-                    let msg = msg.reply_markup(inline_keyboard);
-                    convert_future(api.send(msg))
+                gamestate::UiRequest::ChooseTopic(current_player_name, topics) => {
+                    let mut msg = SendMessage::new(
+                        config.game_chat,
+                        format!("{}, выберите тему", current_player_name)
+                    );
+                    let inline_keyboard = topics_inline_keyboard(topics);
+                    msg.reply_markup(inline_keyboard);
+                    let fut = api.send(msg);
+                    convert_future(fut)
+                }
+                gamestate::UiRequest::ChooseQuestion(topic, costs) => {
+                    let mut msg = SendMessage::new(
+                        config.game_chat,
+                        "Выберите цену".to_string(),
+                    );
+                    let inline_keyboard = questioncosts_inline_keyboard(topic, costs);
+                    msg.reply_markup(inline_keyboard);
+                    let fut = api.send(msg);
+                    convert_future(fut)
                 }
                 gamestate::UiRequest::AskAdminYesNo(question) => {
                     let inline_keyboard = reply_markup!(inline_keyboard,
