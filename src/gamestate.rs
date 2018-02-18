@@ -394,7 +394,7 @@ impl GameState {
         }
     }
 
-    // Test only methods
+    #[cfg(test)]
     fn get_players(&self) -> Vec<Player> {
         let mut v = vec![];
         for k in self.players.keys() {
@@ -403,15 +403,18 @@ impl GameState {
         v
     }
 
+    #[cfg(test)]
     fn get_player_score(&self, id: UserId) -> Option<i64> {
         let player = self.players.keys().find(|player| player.id() == id);
         player.and_then(|player| self.players.get(player).cloned())
     }
 
+    #[cfg(test)]
     fn get_current_player(&self) -> Option<Player> {
         self.current_player.clone()
     }
 
+    #[cfg(test)]
     fn set_current_player(&mut self, id: UserId) -> Result<(), String> {
         let player = self.players.keys().find(|player| player.id() == id);
         let player = player.ok_or(String::from("does not exist"))?;
@@ -419,6 +422,7 @@ impl GameState {
         Ok(())
     }
 
+    #[cfg(test)]
     fn get_state(&self) -> &State {
         &self.state
     }
@@ -428,7 +432,68 @@ impl GameState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use questionsstorage::FakeQuestionsStorage;
+    use questionsstorage::QuestionsStorage;
+
+    pub struct FakeQuestionsStorage {
+        questions: HashMap<(String, usize), Question>
+    }
+
+    impl FakeQuestionsStorage {
+        pub fn new() -> Self {
+            let mut question_storage = HashMap::new();
+            question_storage.insert(
+                (String::from("Sport"), 1),
+                Question::new("2 * 2 = ?", "4"),
+            );
+            question_storage.insert(
+                (String::from("Sport"), 2),
+                Question::new("3 * 2 = ?", "6"),
+            );
+            question_storage.insert(
+                (String::from("Sport"), 3),
+                Question::new("4 * 2 = ?", "8"),
+            );
+            question_storage.insert(
+                (String::from("Sport"), 4),
+                Question::new("5 * 2 = ?", "10"),
+            );
+            question_storage.insert(
+                (String::from("Sport"), 5),
+                Question::new("6 * 2 = ?", "12"),
+            );
+
+            question_storage.insert(
+                (String::from("Movies"), 1),
+                Question::new("2 * 2 = ?", "4"),
+            );
+            question_storage.insert(
+                (String::from("Movies"), 2),
+                Question::new("3 * 2 = ?", "6"),
+            );
+            question_storage.insert(
+                (String::from("Movies"), 3),
+                Question::new("4 * 2 = ?", "8"),
+            );
+            question_storage.insert(
+                (String::from("Movies"), 4),
+                Question::new("5 * 2 = ?", "10"),
+            );
+            question_storage.insert(
+                (String::from("Movies"), 5),
+                Question::new("6 * 2 = ?", "12"),
+            );
+
+            Self {
+                questions: question_storage
+            }
+        }
+    }
+
+    impl QuestionsStorage for FakeQuestionsStorage {
+        fn get(&self, topic_name: String, difficulty: usize) -> Option<Question> {
+            self.questions.get(&(topic_name, difficulty)).cloned()
+        }
+    }
 
     fn create_game_state(user: UserId) -> GameState {
         let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());

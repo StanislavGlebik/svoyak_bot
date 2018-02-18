@@ -1,5 +1,4 @@
 extern crate csv;
-#[macro_use]
 extern crate failure;
 extern crate futures;
 #[macro_use]
@@ -8,22 +7,15 @@ extern crate telegram_bot;
 extern crate serde_derive;
 extern crate tokio_core;
 
-use std::collections::BTreeSet;
-use std::collections::HashMap;
 use std::env;
-use std::thread;
-use std::time::Duration;
 
 use failure::{err_msg, Error};
-use futures::{Future, IntoFuture, Sink, stream, Stream};
+use futures::{Future, IntoFuture, Sink, Stream};
 use futures::sync::mpsc;
-use futures::future::{Either, join_all};
 use tokio_core::reactor::{Core, Timeout};
 
-use telegram_bot::{Api, CanReplySendMessage, ChatId, InlineKeyboardMarkup, InlineKeyboardButton,
-                   MessageKind};
-use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream, UserId};
-use std::sync::{Arc, Mutex};
+use telegram_bot::{Api, InlineKeyboardMarkup, InlineKeyboardButton, MessageKind};
+use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream};
 
 mod gamestate;
 mod messages;

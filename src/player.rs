@@ -5,14 +5,13 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug)]
 pub struct Player {
-    score: i64,
     name: String,
     id: UserId,
 }
 
 impl Player {
     pub fn new(name: String, id: UserId) -> Player {
-        Player { score: 0, name, id }
+        Player { name, id }
     }
 
     pub fn name(&self) -> &String {
@@ -21,14 +20,6 @@ impl Player {
 
     pub fn id(&self) -> UserId {
         self.id
-    }
-
-    pub fn score(&self) -> i64 {
-        self.score
-    }
-
-    pub fn update_score(&mut self, delta: i64) {
-        self.score += delta;
     }
 }
 
