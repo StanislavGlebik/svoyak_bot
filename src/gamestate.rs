@@ -29,6 +29,7 @@ pub struct GameState {
     current_player: Option<Player>,
     questions: HashMap<String, Vec<usize>>,
     questions_storage: Box<QuestionsStorage>,
+    players_falsestarted: HashSet<Player>,
     players_answered_current_question: HashSet<Player>,
     questions_per_topic: usize,
     tours: Vec<TourDescription>,
@@ -76,6 +77,7 @@ impl GameState {
             current_player: None,
             questions: HashMap::new(),
             questions_storage,
+            players_falsestarted: HashSet::new(),
             players_answered_current_question: HashSet::new(),
             questions_per_topic,
             tours,
@@ -89,6 +91,7 @@ impl GameState {
         match self.state {
             State::WaitingForQuestion => {
                 eprintln!("/question command was executed");
+                self.players_falsestarted.clear();
                 self.players_answered_current_question.clear();
             }
             State::Answering(_, _) => {
@@ -189,12 +192,30 @@ impl GameState {
 
     pub fn message(&mut self, user: UserId, _message: String) -> Vec<UiRequest> {
         eprintln!("User {} sent a message '{}'", user, _message);
+        if let State::Falsestart(_, _) = self.state.clone() {
+            let player = self.find_player(user).cloned();
+            match player {
+                Some(player) => {
+                    self.players_falsestarted.insert(player.clone());
+                    return vec![
+                        UiRequest::SendTextToMainChat(format!("Фальшстарт {}", player.name())),
+                    ];
+                }
+                None => {
+                    return vec![];
+                }
+            }
+        }
+
         if let State::CanAnswer(question, cost) = self.state.clone() {
             let player = self.find_player(user).cloned();
             match player {
                 Some(player) => {
                     if self.players_answered_current_question.contains(&player) {
                         eprintln!("Player '{:?}' already answered this question", player);
+                        return vec![];
+                    } else if self.players_falsestarted.contains(&player) {
+                        eprintln!("Player {} falsestarted", player.name());
                         return vec![];
                     } else {
                         eprintln!("{:?}", self.players_answered_current_question);
@@ -282,6 +303,7 @@ impl GameState {
                 Ok(_) => {
                     if self.players_answered_current_question.len() != self.players.len() {
                         self.set_state(State::CanAnswer(question, cost));
+                        self.players_falsestarted.clear();
                         vec![
                             UiRequest::Timeout(Some(INCORRECT_ANSWER.to_string()), Duration::new(3, 0)),
                         ]
@@ -799,5 +821,76 @@ mod test {
         game_state.yes_reply(admin);
 
         assert_eq!(game_state.get_player_score(p1), Some(200));
+    }
+
+    #[test]
+    fn test_falsestarts_simple() {
+        let admin = UserId::from(1);
+        let p1 = UserId::from(2);
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1, String::from("new_1"));
+        game_state.start(admin);
+        game_state.next_question(admin);
+
+        game_state.select_topic("Sport", p1);
+        game_state.select_question("Sport", 200, p1);
+        game_state.message(p1, String::from("1"));
+        game_state.timeout();
+        game_state.message(p1, String::from("1"));
+        match game_state.get_state() {
+            &State::Answering(_, _) => {
+                assert!(false);
+            }
+            _ => {
+            }
+        }
+    }
+
+    #[test]
+    fn test_falsestarts_second_can_answer() {
+        let admin = UserId::from(1);
+        let p1 = UserId::from(2);
+        let p2 = UserId::from(3);
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1, String::from("new_1"));
+        game_state.add_player(p2, String::from("new_2"));
+        game_state.start(admin);
+        game_state.next_question(admin);
+
+        game_state.set_current_player(p1).unwrap();
+        game_state.select_topic("Sport", p1);
+        game_state.select_question("Sport", 100, p1);
+        game_state.message(p1, String::from("1"));
+        game_state.timeout();
+        game_state.message(p2, String::from("1"));
+        game_state.yes_reply(admin);
+
+        assert_eq!(game_state.get_player_score(p1), Some(0));
+        assert_eq!(game_state.get_player_score(p2), Some(100));
+    }
+
+    #[test]
+    fn test_falsestarts_can_answer_after_no() {
+        let admin = UserId::from(1);
+        let p1 = UserId::from(2);
+        let p2 = UserId::from(3);
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1, String::from("new_1"));
+        game_state.add_player(p2, String::from("new_2"));
+        game_state.start(admin);
+        game_state.next_question(admin);
+
+        game_state.set_current_player(p1).unwrap();
+        game_state.select_topic("Sport", p1);
+        game_state.select_question("Sport", 100, p1);
+        game_state.message(p1, String::from("1"));
+        game_state.timeout();
+        game_state.message(p2, String::from("1"));
+        game_state.no_reply(admin);
+        game_state.message(p1, String::from("1"));
+        game_state.yes_reply(admin);
+
+        assert_eq!(game_state.get_player_score(p1), Some(100));
+        assert_eq!(game_state.get_player_score(p2), Some(-100));
     }
 }
