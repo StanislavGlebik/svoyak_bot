@@ -79,6 +79,7 @@ enum TextMessage {
     GetScore,
     StartGame,
     CurrentPlayer,
+    NextTour,
 }
 
 enum CallbackMessage {
@@ -107,6 +108,10 @@ fn parse_text_message(data: &String) -> TextMessage {
 
     if data == "/currentplayer" {
         return TextMessage::CurrentPlayer;
+    }
+
+    if data == "/nexttour" {
+        return TextMessage::NextTour;
     }
 
     if data == BEGIN_CMD {
@@ -180,7 +185,12 @@ fn main() {
     let question_storage: Box<QuestionsStorage> = Box::new(
         CsvQuestionsStorage::new(config.questions_storage_path.clone()).expect("cannot open questions storage")
     );
-    let mut gamestate = gamestate::GameState::new(config.admin_user, question_storage);
+    let mut gamestate = gamestate::GameState::new(
+        config.admin_user,
+        question_storage,
+        config.questions_per_topic,
+        config.tours.clone(),
+    ).expect("failed to create gamestate");
 
     let fut = requests_stream.for_each(move |request| {
         let res = match request {
@@ -206,6 +216,9 @@ fn main() {
                                 }
                                 TextMessage::CurrentPlayer => {
                                     gamestate.current_player(message.from.id)
+                                }
+                                TextMessage::NextTour => {
+                                    gamestate.next_tour(message.from.id)
                                 }
                             }
                         } else {

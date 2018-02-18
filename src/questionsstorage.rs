@@ -19,6 +19,7 @@ pub struct CsvQuestionsStorage {
 }
 
 impl CsvQuestionsStorage {
+    // TODO(stash): skip header
     pub fn new<P: AsRef<Path>>(p: P) -> Result<Self, Error> {
         println!("{:?}", p.as_ref());
         let file = File::open(p)?;

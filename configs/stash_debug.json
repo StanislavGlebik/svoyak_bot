@@ -1,5 +1,24 @@
 {
     "game_chat_id": -272387150,
     "admin_id":125732128,
-    "questions_storage_path":"defaultquestions.csv"
+    "questions_storage_path":"defaultquestions.csv",
+    "questions_per_topic": 5,
+    "tours": [
+        {
+            "multiplier": 100,
+            "topics": [
+                {
+                    "name": "Movies"
+                }
+            ]
+        },
+        {
+            "multiplier": 200,
+            "topics": [
+                {
+                    "name": "Знай наших"
+                }
+            ]
+        }
+    ]
 }

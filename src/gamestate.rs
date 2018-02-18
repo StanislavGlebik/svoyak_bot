@@ -4,8 +4,10 @@ use std::collections::HashSet;
 
 use telegram_bot::UserId;
 
+use failure::{Error, err_msg};
 use messages::*;
 use player::Player;
+use telegram_config::TourDescription;
 use question::Question;
 use questionsstorage::QuestionsStorage;
 
@@ -27,7 +29,11 @@ pub struct GameState {
     current_player: Option<Player>,
     questions: HashMap<String, Vec<usize>>,
     questions_storage: Box<QuestionsStorage>,
-    players_answered_current_question: HashSet<Player>
+    players_answered_current_question: HashSet<Player>,
+    questions_per_topic: usize,
+    tours: Vec<TourDescription>,
+    current_tour: usize,
+    current_multiplier: usize,
 }
 
 pub enum UiRequest {
@@ -42,23 +48,40 @@ pub enum UiRequest {
 }
 
 impl GameState {
-    pub fn new(admin_user: UserId, questions_storage: Box<QuestionsStorage>) -> Self {
-        let mut questions = HashMap::new();
-        questions.insert(String::from("Sport"), vec![1, 2, 3, 4, 5]);
-        questions.insert(String::from("Movies"), vec![1, 2, 3, 4, 5]);
-        questions.insert(String::from("Anthropology"), vec![1, 2, 3, 4, 5]);
-        questions.insert(String::from("Очевидное и невероятное"), vec![1, 2, 3, 4, 5]);
-        questions.insert(String::from("Знай наших"), vec![1, 2, 3, 4, 5]);
+    pub fn new(
+            admin_user: UserId,
+            questions_storage: Box<QuestionsStorage>,
+            questions_per_topic: usize,
+            tours: Vec<TourDescription>,
+    ) -> Result<Self, Error> {
+        if questions_per_topic == 0 {
+            return Err(err_msg(String::from("questions per topic can't be zero")));
+        }
+        for tour in tours.iter() {
+            for topic in tour.topics.iter() {
+                for i in 0..questions_per_topic {
+                  let question_num = i + 1;
+                  let topic_name = &topic.name;
+                  if questions_storage.get(topic_name.clone(), i+1).is_none() {
+                    return Err(err_msg(format!("{} is not found in {}", topic_name, question_num)));
+                  }
+                }
+            }
+        }
 
-        Self {
+        Ok(Self {
             admin_user,
             state: State::WaitingForPlayersToJoin,
             players: HashMap::new(),
             current_player: None,
-            questions,
+            questions: HashMap::new(),
             questions_storage,
-            players_answered_current_question: HashSet::new()
-        }
+            players_answered_current_question: HashSet::new(),
+            questions_per_topic,
+            tours,
+            current_tour: 0,
+            current_multiplier: 0,
+        })
     }
 
     fn set_state(&mut self, state: State) {
@@ -134,6 +157,8 @@ impl GameState {
                 ];
             }
 
+            self.current_tour = 0;
+            self.reload_available_questions();
             self.set_state(State::Pause);
             vec![
                 UiRequest::SendTextToMainChat(
@@ -141,6 +166,25 @@ impl GameState {
                 ),
             ]
         }
+    }
+
+    pub fn next_tour(&mut self, user: UserId) -> Vec<UiRequest> {
+        eprintln!("User {} asking for the next tour", user);
+        if user != self.admin_user {
+            println!("non-admin user tried to select next question");
+            return vec![];
+        }
+
+        if self.state != State::Pause && self.state != State::WaitingForTopic {
+            println!("incorrect state to move to the next tour");
+            return vec![];
+        }
+
+        self.current_tour += 1;
+        self.reload_available_questions();
+        vec![
+            UiRequest::SendTextToMainChat("Переходим к следующему туру".to_string()),
+        ]
     }
 
     pub fn message(&mut self, user: UserId, _message: String) -> Vec<UiRequest> {
@@ -300,7 +344,7 @@ impl GameState {
     ) -> Vec<UiRequest> {
         // TODO(stas): make it possible to deselect the topic
         if self.state != State::WaitingForTopic {
-            println!("unexpected question selection");
+            println!("unexpected topic selection");
             return vec![];
         }
 
@@ -361,7 +405,7 @@ impl GameState {
             }
         }
 
-        match self.questions_storage.get(topic.clone(), cost) {
+        match self.questions_storage.get(topic.clone(), cost / self.current_multiplier) {
             Some(question) => {
                 self.set_state(State::Falsestart(question.clone(), cost as i64));
                 let main_chat_message = format!(
@@ -411,6 +455,26 @@ impl GameState {
         }
 
         vec![UiRequest::SendTextToMainChat(format!("{}", res))]
+    }
+
+
+    fn reload_available_questions(&mut self) {
+        self.questions.clear();
+        match self.tours.get(self.current_tour) {
+            Some(ref tour) => {
+                self.current_multiplier = tour.multiplier;
+                for topic in &tour.topics {
+                    let mut costs = vec![];
+                    for i in 0..self.questions_per_topic {
+                        costs.push((i + 1) * self.current_multiplier);
+                    }
+                    self.questions.insert(topic.name.clone(), costs);
+                }
+            }
+            None => {
+                eprintln!("current tour is not available!");
+            }
+        }
     }
 
     fn find_player(&self, id: UserId) -> Option<&Player> {
@@ -482,6 +546,7 @@ impl GameState {
 #[cfg(test)]
 mod test {
     use super::*;
+    use telegram_config::Topic;
     use questionsstorage::QuestionsStorage;
 
     pub struct FakeQuestionsStorage {
@@ -547,7 +612,30 @@ mod test {
 
     fn create_game_state(user: UserId) -> GameState {
         let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
-        GameState::new(user, questions_storage)
+        let tours = vec![
+            TourDescription {
+                multiplier: 100,
+                topics: vec![
+                    Topic {
+                        name: "Sport".to_string(),
+                    }
+                ]
+            },
+            TourDescription {
+                multiplier: 200,
+                topics: vec![
+                    Topic {
+                        name: "Movies".to_string(),
+                    }
+                ]
+            },
+        ];
+        GameState::new(
+            user,
+            questions_storage,
+            5,
+            tours,
+        ).unwrap()
     }
 
     #[test]
@@ -606,7 +694,7 @@ mod test {
             }
         }
 
-        game_state.select_question("Sport", 1, p1);
+        game_state.select_question("Sport", 100, p1);
         match game_state.get_state() {
             &State::Falsestart(_, _) => {}
             _ => {
@@ -619,7 +707,7 @@ mod test {
         game_state.message(p1, String::from("1"));
         game_state.yes_reply(admin);
 
-        assert_eq!(game_state.get_player_score(p1), Some(1));
+        assert_eq!(game_state.get_player_score(p1), Some(100));
         assert_eq!(game_state.get_player_score(p2), Some(0));
         assert_eq!(game_state.get_current_player().map(|p| p.id()), Some(p1));
 
@@ -637,5 +725,79 @@ mod test {
         game_state.select_question("Sport", 200, p2);
         // Only current player can select next question
         assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
+    }
+
+    #[test]
+    fn test_game_state_creation() {
+        let admin = UserId::from(1);
+        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let tours = vec![
+            TourDescription {
+                multiplier: 100,
+                topics: vec![
+                    Topic {
+                        name: "Nonexisting topic".to_string(),
+                    }
+                ]
+            }
+        ];
+
+        // 0 question number
+        assert!(GameState::new(
+            admin,
+            questions_storage,
+            0,
+            tours.clone(),
+        ).is_err());
+
+        // Non existing topic
+        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        assert!(GameState::new(
+            admin,
+            questions_storage,
+            5,
+            tours,
+        ).is_err());
+
+
+        // Incorrect question number
+        let tours = vec![
+            TourDescription {
+                multiplier: 100,
+                topics: vec![
+                    Topic {
+                        name: "Sport".to_string(),
+                    }
+                ]
+            }
+        ];
+
+        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        assert!(GameState::new(
+            admin,
+            questions_storage,
+            6,
+            tours,
+        ).is_err());
+    }
+
+    #[test]
+    fn test_tours_simple() {
+        let admin = UserId::from(1);
+        let p1 = UserId::from(2);
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1, String::from("new_1"));
+        game_state.start(admin);
+        game_state.next_tour(admin);
+        game_state.next_question(admin);
+
+        game_state.select_topic("Movies", p1);
+        game_state.select_question("Movies", 200, p1);
+
+        game_state.timeout();
+        game_state.message(p1, String::from("1"));
+        game_state.yes_reply(admin);
+
+        assert_eq!(game_state.get_player_score(p1), Some(200));
     }
 }

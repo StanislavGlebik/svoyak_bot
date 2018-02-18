@@ -4,11 +4,24 @@ extern crate serde_json;
 use std::fs::File;
 use telegram_bot;
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Topic {
+    pub name: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct TourDescription {
+    pub multiplier: usize,
+    pub topics: Vec<Topic>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct RawConfig {
     pub admin_id: i64,
     pub game_chat_id: i64,
     pub questions_storage_path: String,
+    pub questions_per_topic: usize,
+    pub tours: Vec<TourDescription>,
 }
 
 pub struct Config {
@@ -16,6 +29,8 @@ pub struct Config {
     pub admin_chat : telegram_bot::ChatId,
     pub game_chat : telegram_bot::ChatId,
     pub questions_storage_path: String,
+    pub questions_per_topic: usize,
+    pub tours: Vec<TourDescription>,
 }
 
 const DEFAULT_ADMIN_ID: i64 = 125732128;
@@ -40,6 +55,8 @@ impl RawConfig {
                     admin_id: DEFAULT_ADMIN_ID,
                     game_chat_id: DEFAULT_GAME_CHAT_ID,
                     questions_storage_path: "storage.csv".into(),
+                    questions_per_topic: 5,
+                    tours: vec![],
                 }
             }
         }
@@ -56,6 +73,8 @@ impl Config {
             admin_chat: telegram_bot::ChatId::from(config.admin_id),
             game_chat: telegram_bot::ChatId::from(config.game_chat_id),
             questions_storage_path: config.questions_storage_path,
+            questions_per_topic: config.questions_per_topic,
+            tours: config.tours,
         }
     }
 }
