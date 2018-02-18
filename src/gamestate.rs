@@ -33,7 +33,7 @@ pub struct GameState {
 pub enum UiRequest {
     SendTextToMainChat(String),
     SendTextToMainChatWithDelay(String, Duration),
-    Timeout(Duration),
+    Timeout(Option<String>, Duration),
     ChooseTopic(String, Vec<String>),
     ChooseQuestion(String, Vec<usize>),
     AskAdminYesNo(String),
@@ -239,8 +239,7 @@ impl GameState {
                     if self.players_answered_current_question.len() != self.players.len() {
                         self.set_state(State::CanAnswer(question, cost));
                         vec![
-                            UiRequest::SendTextToMainChat(INCORRECT_ANSWER.to_string()),
-                            UiRequest::Timeout(Duration::new(3, 0)),
+                            UiRequest::Timeout(Some(INCORRECT_ANSWER.to_string()), Duration::new(3, 0)),
                         ]
                     } else {
                         self.set_state(State::Pause);
@@ -272,8 +271,7 @@ impl GameState {
             println!("falsestart");
             self.set_state(State::CanAnswer(question.clone(), cost));
             return vec![
-                UiRequest::SendTextToMainChat(String::from("!")),
-                UiRequest::Timeout(Duration::new(8, 0)),
+                UiRequest::Timeout(None, Duration::new(8, 0)),
             ];
         };
 
@@ -385,7 +383,7 @@ impl GameState {
                         question_msg,
                         Duration::from_secs(delay_before_question_secs)
                     ),
-                    UiRequest::Timeout(Duration::from_secs(delay_falsestart_secs)),
+                    UiRequest::Timeout(Some("!".to_string()), Duration::from_secs(delay_falsestart_secs)),
                 ]
             }
             None => {

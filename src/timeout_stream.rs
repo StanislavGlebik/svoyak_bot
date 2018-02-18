@@ -4,15 +4,14 @@ use std::mem;
 use failure::{err_msg, Error};
 use futures::{Async, Future, Poll, Stream};
 use futures::sync::mpsc::Receiver;
-use tokio_core::reactor::Timeout;
 
 pub struct TimeoutStream {
-    new_timers_stream: Receiver<Option<Timeout>>,
+    new_timers_stream: Receiver<Option<Box<Future<Item = (), Error = Error>>>>,
     inflight_timer: Option<Box<Future<Item = (), Error = Error>>>,
 }
 
 impl TimeoutStream {
-    pub fn new(new_timers_stream: Receiver<Option<Timeout>>) -> Self {
+    pub fn new(new_timers_stream: Receiver<Option<Box<Future<Item = (), Error = Error>>>>) -> Self {
         Self {
             new_timers_stream,
             inflight_timer: None,
@@ -33,7 +32,10 @@ impl Stream for TimeoutStream {
                 Async::Ready(Some(timer_or_cancel)) => {
                     match timer_or_cancel {
                         Some(timer) => {
-                            let fut = Box::new(timer.map_err(|_| err_msg("timer failed")));
+                            let fut = Box::new(timer.map_err(|err| {
+                                let msg = format!("timer failed: {}", err);
+                                err_msg(msg)
+                            }));
                             mem::replace(&mut self.inflight_timer, Some(fut));
                         }
                         None => {

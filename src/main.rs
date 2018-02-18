@@ -169,7 +169,7 @@ fn main() {
     let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok());
 
     // Fetch new updates via long poll method
-    let (sender, receiver) = mpsc::channel::<Option<Timeout>>(1);
+    let (sender, receiver) = mpsc::channel::<Option<Box<Future<Item = (), Error = Error>>>>(1);
 
     let handle = core.handle();
     let timeout_stream = timeout_stream::TimeoutStream::new(receiver);
@@ -256,9 +256,30 @@ fn main() {
                     let fut = timeout.map_err(|_| err_msg("timeout error")).and_then(|_| sendfut);
                     convert_future(fut)
                 }
-                gamestate::UiRequest::Timeout(duration) => {
+                gamestate::UiRequest::Timeout(msg, duration) => {
                     let timer = Timeout::new(duration, &handle).expect("cannot create timer");
-                    convert_future(sender.clone().send(Some(timer)))
+                    let timer = timer.map_err(|_err| err_msg("timer error happened"));
+                    let timer_and_msg = match msg {
+                        Some(msg) => {
+                            let msg = SendMessage::new(config.game_chat, msg);
+                            let sendfut = api.send(msg).map_err(
+                                |err| {
+                                    let msg = format!("send msg after timeout failed {:?}", err);
+                                    err_msg(msg)
+                                }
+                            ).map(|_| ());
+                            let res: Box<Future<Item = (), Error = Error>> = Box::new(
+                                timer.and_then(|_| sendfut)
+                            );
+                            res
+                        }
+                        None => {
+                            let res: Box<Future<Item = (), Error = Error>> = Box::new(timer);
+                            res
+                        }
+                    };
+
+                    convert_future(sender.clone().send(Some(timer_and_msg)))
                 }
                 gamestate::UiRequest::ChooseTopic(current_player_name, topics) => {
                     let mut msg = SendMessage::new(
