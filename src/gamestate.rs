@@ -88,14 +88,6 @@ impl GameState {
             }
         }
     }
-    /*
-    fn get_question(&self, topic: &String, cost: usize) -> Option<Question> {
-        // stash, do you see a better way? I don't see, why I need to clone key in 
-        // .get() method
-        self.questions_storage.get(&(topic.clone(), cost)).cloned();
-        self.questions_storage 
-    }
-    */
 
     pub fn add_player(&mut self, new_user: UserId, name: String) -> Vec<UiRequest> {
         if self.state != State::WaitingForPlayersToJoin {
@@ -133,22 +125,19 @@ impl GameState {
             println!("attempt to start the game twice");
             vec![]
         } else {
-            self.set_state(State::Pause);
-
             self.current_player = self.players.keys().next().cloned();
-            let current_player_name = match self.current_player {
-                Some(ref player) => player.name(),
-                None => {
-                    return vec![
-                        UiRequest::SendTextToMainChat(String::from(
-                            "Ни одного игрока не зарегистрировалось!",
-                        )),
-                    ];
-                }
-            };
+            if self.current_player.is_none() {
+                return vec![
+                    UiRequest::SendTextToMainChat(String::from(
+                        "Ни одного игрока не зарегистрировалось!",
+                    )),
+                ];
+            }
+
+            self.set_state(State::Pause);
             vec![
                 UiRequest::SendTextToMainChat(
-                    format!("Игру начинает {}", current_player_name)
+                    format!("Игру начинает {}", self.current_player.clone().unwrap().name())
                 ),
             ]
         }
@@ -323,10 +312,10 @@ impl GameState {
         }
 
         let topic = topic.to_string();
-        match self.questions.get(&topic) {
+        match self.questions.clone().get(&topic) {
             Some(costs) => {
                 if !costs.is_empty() {
-                    self.state = State::WaitingForQuestion;
+                    self.set_state(State::WaitingForQuestion);
                     vec![
                         UiRequest::ChooseQuestion(topic.clone(), costs.clone())
                     ]
