@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::time::Duration;
+use std::collections::HashSet;
 
 use telegram_bot::UserId;
 
@@ -26,6 +27,7 @@ pub struct GameState {
     current_player: Option<Player>,
     questions: HashMap<String, Vec<usize>>,
     questions_storage: Box<QuestionsStorage>,
+    players_answered_current_question: HashSet<Player>
 }
 
 pub enum UiRequest {
@@ -55,8 +57,45 @@ impl GameState {
             current_player: None,
             questions,
             questions_storage,
+            players_answered_current_question: HashSet::new()
         }
     }
+
+    fn set_state(&mut self, state: State) {
+        self.state = state;
+        match self.state {
+            State::WaitingForQuestion => {
+                eprintln!("/question command was executed");
+                self.players_answered_current_question.clear();
+            }
+            State::Answering(_, _) => {
+                eprintln!("Now waiting for player '{:?}' to answer", self.current_player.as_ref());
+            }
+            State::WaitingForPlayersToJoin => {
+                eprintln!("Now waiting for players to join the game");
+            }
+            State::Falsestart(_, _) => {
+                eprintln!("Now it would be a falsestart to answer the question");
+            }
+            State::CanAnswer(_, _) => {
+                eprintln!("Now it is ok to answer the question");
+            }
+            State::Pause => {
+                eprintln!("The game is paused");
+            }
+            State::WaitingForTopic => {
+                eprintln!("Waiting for the choice of topic");
+            }
+        }
+    }
+    /*
+    fn get_question(&self, topic: &String, cost: usize) -> Option<Question> {
+        // stash, do you see a better way? I don't see, why I need to clone key in 
+        // .get() method
+        self.questions_storage.get(&(topic.clone(), cost)).cloned();
+        self.questions_storage 
+    }
+    */
 
     pub fn add_player(&mut self, new_user: UserId, name: String) -> Vec<UiRequest> {
         if self.state != State::WaitingForPlayersToJoin {
@@ -90,23 +129,23 @@ impl GameState {
             return vec![];
         }
 
-        self.current_player = self.players.keys().next().cloned();
-        let current_player_name = match self.current_player {
-            Some(ref player) => player.name(),
-            None => {
-                return vec![
-                    UiRequest::SendTextToMainChat(String::from(
-                        "Ни одного игрока не зарегистрировалось!",
-                    )),
-                ];
-            }
-        };
-
         if self.state != State::WaitingForPlayersToJoin {
             println!("attempt to start the game twice");
             vec![]
         } else {
-            self.state = State::Pause;
+            self.set_state(State::Pause);
+
+            self.current_player = self.players.keys().next().cloned();
+            let current_player_name = match self.current_player {
+                Some(ref player) => player.name(),
+                None => {
+                    return vec![
+                        UiRequest::SendTextToMainChat(String::from(
+                            "Ни одного игрока не зарегистрировалось!",
+                        )),
+                    ];
+                }
+            };
             vec![
                 UiRequest::SendTextToMainChat(
                     format!("Игру начинает {}", current_player_name)
@@ -116,13 +155,20 @@ impl GameState {
     }
 
     pub fn message(&mut self, user: UserId, _message: String) -> Vec<UiRequest> {
-        println!("{} {}", user, _message);
+        eprintln!("User {} sent a message '{}'", user, _message);
         if let State::CanAnswer(question, cost) = self.state.clone() {
             let player = self.find_player(user).cloned();
             match player {
                 Some(player) => {
+                    if self.players_answered_current_question.contains(&player) {
+                        eprintln!("Player '{:?}' already answered this question", player);
+                        return vec![];
+                    } else {
+                        eprintln!("{:?}", self.players_answered_current_question);
+                    }
                     self.current_player = Some(player.clone());
-                    self.state = State::Answering(question, cost);
+                    self.players_answered_current_question.insert(player.clone());
+                    self.set_state(State::Answering(question, cost));
                     vec![
                         UiRequest::StopTimer,
                         UiRequest::SendTextToMainChat(format!("Отвечает {}", player.name())),
@@ -150,7 +196,7 @@ impl GameState {
             }
         };
 
-        self.state = State::WaitingForTopic;
+        self.set_state(State::WaitingForTopic);
         let topics: Vec<_> = self.questions.iter()
             .filter(|&(_, costs)| !costs.is_empty())
             .map(|(topic, _)| topic.clone()).collect();
@@ -167,7 +213,7 @@ impl GameState {
         if let State::Answering(_, cost) = self.state {
             match self.update_current_player_score(cost) {
                 Ok(_) => {
-                    self.state = State::WaitingForTopic;
+                    self.set_state(State::WaitingForTopic);
                     let current_player_name = match self.current_player {
                         Some(ref player) => player.name(),
                         None => {
@@ -201,11 +247,24 @@ impl GameState {
         if let State::Answering(question, cost) = self.state.clone() {
             match self.update_current_player_score(-cost) {
                 Ok(_) => {
-                    self.state = State::CanAnswer(question, cost);
-                    vec![
-                        UiRequest::SendTextToMainChat(INCORRECT_ANSWER.to_string()),
-                        UiRequest::Timeout(Duration::new(3, 0)),
-                    ]
+                    if self.players_answered_current_question.len() != self.players.len() {
+                        self.set_state(State::CanAnswer(question, cost));
+                        vec![
+                            UiRequest::SendTextToMainChat(INCORRECT_ANSWER.to_string()),
+                            UiRequest::Timeout(Duration::new(3, 0)),
+                        ]
+                    } else {
+                        self.set_state(State::Pause);
+                        vec![
+                            UiRequest::SendTextToMainChat(INCORRECT_ANSWER.to_string()),
+                            UiRequest::SendTextToMainChat(
+                                format!(
+                                    "Все игроки не смогли ответить на такой простой вопрос.\nПравильный ответ: '{}'",
+                                    question.answer()
+                                )
+                            )
+                        ]
+                    }
                 }
                 Err(err_msg) => {
                     println!("{}", err_msg);
@@ -222,22 +281,22 @@ impl GameState {
         println!("timeout");
         if let State::Falsestart(question, cost) = self.state.clone() {
             println!("falsestart");
-            self.state = State::CanAnswer(question.clone(), cost);
+            self.set_state(State::CanAnswer(question.clone(), cost));
             return vec![
                 UiRequest::SendTextToMainChat(String::from("!")),
-                UiRequest::Timeout(Duration::new(3, 0)),
+                UiRequest::Timeout(Duration::new(8, 0)),
             ];
         };
 
         if let State::CanAnswer(question, _) = self.state.clone() {
-            self.state = State::Pause;
+            self.set_state(State::Pause);
             let current_player_name = match self.current_player {
                 Some(ref player) => player.name(),
                 None => return vec![],
             };
             let msg = format!(
                 "Время вышло!\nПравильный ответ: {}\nСледующий вопрос выбирает {}",
-                question.question(),
+                question.answer(),
                 current_player_name
             );
             vec![UiRequest::SendTextToMainChat(msg)]
@@ -303,43 +362,45 @@ impl GameState {
             Some(costs) => {
                 if costs.contains(&cost) {
                     costs.retain(|elem| elem != &cost);
-                    match self.questions_storage.get(topic.clone(), cost) {
-                        Some(question) => {
-                            self.state = State::Falsestart(question.clone(), cost as i64);
-                            let main_chat_message = format!(
-                                "Играем тему {}, вопрос за {}",
-                                topic,
-                                cost
-                            );
-                            let question_msg = format!("{}", question.question());
-                            let delay_before_question_secs = 5;
-                            let delay_falsestart_secs = delay_before_question_secs + 1;
-                            vec![
-                                UiRequest::SendToAdmin(format!(
-                                    "question: {}\nanswer: {}",
-                                    question.question(),
-                                    question.answer()
-                                )),
-                                UiRequest::SendTextToMainChat(main_chat_message),
-                                UiRequest::SendTextToMainChatWithDelay(
-                                    question_msg,
-                                    Duration::from_secs(delay_before_question_secs)
-                                ),
-                                UiRequest::Timeout(Duration::from_secs(delay_falsestart_secs)),
-                            ]
-                        }
-                        None => {
-                            println!("internal error: question is not found");
-                            vec![]
-                        }
-                    }
+                    eprintln!("Question in topic '{}' and cost {} was selected", topic, cost);
                 } else {
-                    println!("question was already used");
-                    vec![]
+                    eprintln!("Question in topic '{}' and cost {} was already used!", topic, cost);
+                    return vec![];
                 }
             }
             None => {
                 println!("unknown topic");
+                return vec![];
+            }
+        }
+
+        match self.questions_storage.get(topic.clone(), cost) {
+            Some(question) => {
+                self.set_state(State::Falsestart(question.clone(), cost as i64));
+                let main_chat_message = format!(
+                    "Играем тему {}, вопрос за {}",
+                    topic,
+                    cost
+                );
+                let question_msg = format!("{}", question.question());
+                let delay_before_question_secs = 5;
+                let delay_falsestart_secs = delay_before_question_secs + 1;
+                vec![
+                    UiRequest::SendToAdmin(format!(
+                        "question: {}\nanswer: {}",
+                        question.question(),
+                        question.answer()
+                    )),
+                    UiRequest::SendTextToMainChat(main_chat_message),
+                    UiRequest::SendTextToMainChatWithDelay(
+                        question_msg,
+                        Duration::from_secs(delay_before_question_secs)
+                    ),
+                    UiRequest::Timeout(Duration::from_secs(delay_falsestart_secs)),
+                ]
+            }
+            None => {
+                println!("internal error: question is not found");
                 vec![]
             }
         }
