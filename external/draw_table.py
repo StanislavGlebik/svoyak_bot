@@ -5,10 +5,10 @@ import json
 from PIL import ImageDraw, Image, ImageFont
 
 class TableDrawer(object):
-    FONT_NAME = 'arialbd'
-    TOPIC_WIDTH = 500
+    FONT_NAME = 'arial'
+    TOPIC_WIDTH = 800
     SCORE_WIDTH = 100
-    ROW_HEIGHT = 40
+    ROW_HEIGHT = 60
     LINE_WIDTH = 3
     CELL_OFFSET = 7
     LINE_COLOR = (100, 80, 20)

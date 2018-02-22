@@ -12,10 +12,14 @@ use std::env;
 use failure::{err_msg, Error};
 use futures::{Future, IntoFuture, Sink, Stream};
 use futures::sync::mpsc;
+use futures::future::Map;
+use futures::finished;
 use tokio_core::reactor::{Core, Timeout};
 
 use telegram_bot::{Api, InlineKeyboardMarkup, InlineKeyboardButton, MessageKind};
 use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream};
+
+use std::process::Command;
 
 mod gamestate;
 mod messages;
@@ -33,6 +37,13 @@ const CONFIG_VAR: &str = "GAME_CONFIG";
 
 const ANSWER_YES: &str = "AnswerYes";
 const ANSWER_NO: &str = "AnswerNo";
+
+fn send_photo_via_curl() -> Box<Future<Item = (), Error = Error>> {
+    // curl -F chat_id="-303858504" -F photo="@result.png"
+    // https://api.telegram.org/bot521483445:AAEUuf-U2xTkKxjPtUawncpyEGZXEGHaddI/sendPhoto
+    Command::new("curl").arg("-F").arg("chat_id=-303858504").arg("-F").arg("photo=@tmp.png").arg("https://api.telegram.org/bot521483445:AAEUuf-U2xTkKxjPtUawncpyEGZXEGHaddI/sendPhoto").status().expect("Failed to send table score");
+    finished(()).boxed()
+}
 
 fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
     let mut inline_markup = InlineKeyboardMarkup::new();
@@ -328,6 +339,9 @@ fn main() {
                 }
                 gamestate::UiRequest::StopTimer => {
                     convert_future(sender.clone().send(None))
+                }
+                gamestate::UiRequest::SendPhoto(filename) => {
+                    send_photo_via_curl()
                 }
             };
             res_future = convert_future(res_future.and_then(|_| fut));
