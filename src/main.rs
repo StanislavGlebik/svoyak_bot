@@ -5,6 +5,8 @@ extern crate futures;
 extern crate telegram_bot;
 #[macro_use]
 extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
 extern crate tokio_core;
 
 use std::env;
@@ -12,14 +14,16 @@ use std::env;
 use failure::{err_msg, Error};
 use futures::{Future, IntoFuture, Sink, Stream};
 use futures::sync::mpsc;
-use futures::future::Map;
 use futures::finished;
 use tokio_core::reactor::{Core, Timeout};
+use std::fs::File;
+use std::io::prelude::*;
+use std::process::Command;
+use std::thread;
 
 use telegram_bot::{Api, InlineKeyboardMarkup, InlineKeyboardButton, MessageKind};
 use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream};
 
-use std::process::Command;
 
 mod gamestate;
 mod messages;
@@ -37,6 +41,30 @@ const CONFIG_VAR: &str = "GAME_CONFIG";
 
 const ANSWER_YES: &str = "AnswerYes";
 const ANSWER_NO: &str = "AnswerNo";
+
+const SCORE_TABLE_JSON_FILE: &str = "score_table.json";
+const SCORE_TABLE_PNG_FILE: &str = "score_table.png";
+
+fn dump_score_table_file(table: gamestate::ScoreTable, filename: String) {
+    let mut file = File::create(filename).expect("Can't create file");
+    let data = serde_json::to_string(&table).expect("Failed while serializing score table");
+    file.write_all(data.as_bytes()).expect("Can't write to file");
+}
+
+fn make_score_table_image(table: gamestate::ScoreTable, table_filename: String, image_filename: String) {
+    Command::new("python3")
+        .arg("external/draw_table.py")
+        .arg(table_filename)
+        .arg(image_filename).status().expect("Failed to build png");
+}
+
+fn send_score_table(table: gamestate::ScoreTable, chat_id: i64) -> Box<Future<Item = (), Error = Error>> {
+    let (tx, rx) = futures::promise();
+
+    thread::spawn(move || {
+        tx.complete(dump_score_table_file(table, SCORE_TABLE_JSON_FILE));
+    });
+}
 
 fn send_photo_via_curl() -> Box<Future<Item = (), Error = Error>> {
     // curl -F chat_id="-303858504" -F photo="@result.png"

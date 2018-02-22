@@ -1,11 +1,6 @@
-extern crate serde;
-extern crate serde_json;
 use std::collections::HashMap;
 use std::time::Duration;
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::prelude::*;
-use std::process::Command;
 
 use telegram_bot::UserId;
 
@@ -50,7 +45,7 @@ pub enum UiRequest {
     ChooseQuestion(String, Vec<usize>),
     AskAdminYesNo(String),
     SendToAdmin(String),
-    SendPhoto(String),
+    SendScoreTable(ScoreTable),
     StopTimer,
 }
 
@@ -61,7 +56,7 @@ struct ScoreTableItem {
 }
 
 #[derive(Serialize)]
-struct ScoreTable {
+pub struct ScoreTable {
     scores: Vec<usize>,
     data: Vec<ScoreTableItem>
 }
@@ -278,15 +273,6 @@ impl GameState {
         }
     }
 
-    fn make_score_table_image(&self) {
-        {
-            let mut file = File::create("tmp.json").expect("Can't create file");
-            let data = serde_json::to_string(&self.make_score_table()).expect("Failed while serializing score table");
-            file.write_all(data.as_bytes()).expect("Can't write to file");
-        }
-
-        Command::new("python3").arg("external/draw_table.py").arg("tmp.json").arg("tmp.png").status().expect("Failed to build png");
-    }
 
     pub fn next_question(&mut self, user: UserId) -> Vec<UiRequest> {
         if user != self.admin_user {
@@ -301,15 +287,12 @@ impl GameState {
             }
         };
 
-        self.make_score_table_image();
-
-
         self.set_state(State::WaitingForTopic);
         let topics: Vec<_> = self.questions.iter()
             .filter(|&(_, costs)| !costs.is_empty())
             .map(|(topic, _)| topic.clone()).collect();
         vec![
-            UiRequest::SendPhoto(String::from("tmp.png")),
+            UiRequest::SendScoreTable(self.make_score_table()),
             UiRequest::ChooseTopic(current_player_name, topics),
         ]
     }
