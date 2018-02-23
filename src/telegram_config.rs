@@ -25,7 +25,8 @@ struct RawConfig {
 }
 
 pub struct Config {
-    pub admin_user : telegram_bot::UserId,  
+    pub token : String,
+    pub admin_user : telegram_bot::UserId,
     pub admin_chat : telegram_bot::ChatId,
     pub game_chat : telegram_bot::ChatId,
     pub questions_storage_path: String,
@@ -49,7 +50,7 @@ impl RawConfig {
                 );
                 config
             }
-            None => { 
+            None => {
                 eprintln!("Loading default configuration");
                 Self {
                     admin_id: DEFAULT_ADMIN_ID,
@@ -66,9 +67,10 @@ impl RawConfig {
 impl Config {
     /// Read configuration from JSON-file or return
     /// the default one
-    pub fn new(filename: Option<String>) -> Self {
+    pub fn new(filename: Option<String>, token: String) -> Self {
         let config = RawConfig::new(filename);
         Config {
+            token,
             admin_user: telegram_bot::UserId::from(config.admin_id),
             admin_chat: telegram_bot::ChatId::from(config.admin_id),
             game_chat: telegram_bot::ChatId::from(config.game_chat_id),

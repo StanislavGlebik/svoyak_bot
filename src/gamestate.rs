@@ -256,9 +256,9 @@ impl GameState {
             scores.push(i * self.current_multiplier);
         }
         let mut data = Vec::new();
-        for topic in self.tours[self.current_tour].topics.iter() {
-            let topic_name = topic.name.clone();
-            let question_scores = self.questions.get(&topic_name).unwrap().clone();
+        for (topic, scores) in self.questions.iter() {
+            let topic_name = topic.clone();
+            let question_scores = scores.clone();
 
 
             data.push(ScoreTableItem{

@@ -8,7 +8,7 @@ class TableDrawer(object):
     FONT_NAME = 'arial'
     TOPIC_WIDTH = 800
     SCORE_WIDTH = 100
-    ROW_HEIGHT = 60
+    ROW_HEIGHT = 70
     LINE_WIDTH = 3
     CELL_OFFSET = 7
     LINE_COLOR = (100, 80, 20)
@@ -151,7 +151,10 @@ class TableDrawer(object):
         self._draw_grid()
         self._draw_texts()
 
-        self._image.save(result, format='png')
+        offset = int(min(self._width, self._height) * 0.05)
+        image = Image.new('RGB', (self._width + offset * 2, self._height + offset * 2), self.BG_COLOR)
+        image.paste(self._image, (offset, offset))
+        image.save(result, format='png')
 
 
 
