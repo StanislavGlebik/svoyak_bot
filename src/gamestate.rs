@@ -61,6 +61,49 @@ pub struct ScoreTable {
     data: Vec<ScoreTableItem>
 }
 
+impl ScoreTable {
+    pub fn to_string(&self) -> String {
+        let mut rows : Vec<String> = Vec::new();
+
+        let mut topic_length : usize = 0;
+        for ref item in self.data.iter() {
+            let this_length = item.name.chars().count();
+            if this_length > topic_length {
+                topic_length = this_length;
+            }
+        }
+
+        for ref item in self.data.iter() {
+            let mut row = String::from("|");
+            row.push_str(&item.name);
+            while row.chars().count() < topic_length + 1 {
+                row.push_str(" ");
+            }
+            row.push_str("|");
+
+            for score in self.scores.iter() {
+                let mut found = false;
+                for this_score in item.questions.iter() {
+                    if this_score == score {
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    row.push_str("x");
+                } else {
+                    row.push_str(" ");
+                }
+                row.push_str("|");
+            }
+
+            rows.push(row);
+        }
+
+        rows.join("\n")
+    }
+}
+
 impl GameState {
     pub fn new(
             admin_user: UserId,

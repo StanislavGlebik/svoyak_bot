@@ -409,11 +409,20 @@ fn main() {
                     convert_future(sender.clone().send(None))
                 }
                 gamestate::UiRequest::SendScoreTable(score_table) => {
-                    let msg = SendMessage::new(config.game_chat, "!!!");
-                    let sendfut = api.send(msg).map_err(|_| err_msg("send failed"));
+                    let mut msg = SendMessage::new(config.game_chat, String::from("```\n") + &score_table.to_string() + "```");
+                    let msg = msg.parse_mode(telegram_bot::ParseMode::Markdown);
+                    let sendfut : Box<Future<Item = (), Error = Error>> = convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
                     convert_future(
-                        send_score_table(&thread_pool, score_table, config.game_chat, config.token.clone())
-                        //    .or_else(|_| -> Result<(), Error> {println!("!"); sendfut.wait()?; Ok(())})
+                        send_score_table(&thread_pool, score_table, config.game_chat, config.token.clone()).then(
+                            |future| {
+                                match future {
+                                    Ok(_) => Box::new(futures::done(Ok(()))),
+                                    Err(errmsg) => {
+                                        eprintln!("Couldn't send score table image: '{:?}'", errmsg); sendfut
+                                    }
+                                }
+                            }
+                        )
                     )
                 }
             };
