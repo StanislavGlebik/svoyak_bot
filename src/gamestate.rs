@@ -27,6 +27,7 @@ pub struct GameState {
     state: State,
     players: HashMap<Player, i64>,
     current_player: Option<Player>,
+    player_which_chose_question: Option<Player>,
     questions: HashMap<String, Vec<usize>>,
     questions_storage: Box<QuestionsStorage>,
     players_falsestarted: HashSet<Player>,
@@ -130,6 +131,7 @@ impl GameState {
             admin_user,
             state: State::WaitingForPlayersToJoin,
             players: HashMap::new(),
+            player_which_chose_question: None,
             current_player: None,
             questions: HashMap::new(),
             questions_storage,
@@ -389,16 +391,7 @@ impl GameState {
                             UiRequest::Timeout(Some(INCORRECT_ANSWER.to_string()), Duration::new(3, 0)),
                         ]
                     } else {
-                        self.set_state(State::Pause);
-                        vec![
-                            UiRequest::SendTextToMainChat(INCORRECT_ANSWER.to_string()),
-                            UiRequest::SendTextToMainChat(
-                                format!(
-                                    "Все игроки не смогли ответить на такой простой вопрос.\nПравильный ответ: '{}'",
-                                    question.answer()
-                                )
-                            )
-                        ]
+                        self.close_unanswered_question(question, Some(String::from("Все попытались, но ни у кого не получилось")))
                     }
                 }
                 Err(err_msg) => {
@@ -412,10 +405,38 @@ impl GameState {
         }
     }
 
+    fn close_unanswered_question(&mut self, question: Question, reason: Option<String>) -> Vec<UiRequest> {
+        self.set_state(State::Pause);
+        // Haven't received correct answer, so current player is which
+        // asked the question (http://vladimirkhil.com/tv/game/10)
+        self.current_player = self.player_which_chose_question.clone();
+
+        let current_player_name = match self.current_player {
+            Some(ref player) => player.name(),
+            None => {panic!("Trying to process question, but no current player set")}
+        };
+        let msg = format!(
+            "Правильный ответ: {}\nСледующий вопрос выбирает {}",
+            question.answer(),
+            current_player_name
+        );
+
+        if let Some(reason_message) = reason {
+            vec![
+                UiRequest::SendTextToMainChat(reason_message),
+                UiRequest::SendTextToMainChat(msg)
+            ]
+        } else {
+            vec![
+                UiRequest::SendTextToMainChat(msg)
+            ]
+        }
+    }
+
     pub fn timeout(&mut self) -> Vec<UiRequest> {
-        println!("timeout");
+        eprintln!("Scheduled timeout occurred");
         if let State::Falsestart(question, cost) = self.state.clone() {
-            println!("falsestart");
+            eprintln!("Falsestart section if finished, accepting answer now");
             self.set_state(State::CanAnswer(question.clone(), cost));
             return vec![
                 UiRequest::Timeout(None, Duration::new(8, 0)),
@@ -423,19 +444,9 @@ impl GameState {
         };
 
         if let State::CanAnswer(question, _) = self.state.clone() {
-            self.set_state(State::Pause);
-            let current_player_name = match self.current_player {
-                Some(ref player) => player.name(),
-                None => return vec![],
-            };
-            let msg = format!(
-                "Время вышло!\nПравильный ответ: {}\nСледующий вопрос выбирает {}",
-                question.answer(),
-                current_player_name
-            );
-            vec![UiRequest::SendTextToMainChat(msg)]
+            self.close_unanswered_question(question, Some(String::from("Время на ответ вышло!")))
         } else {
-            println!("unexpected timeout");
+            eprintln!("unexpected timeout");
             vec![]
         }
     }
@@ -511,6 +522,7 @@ impl GameState {
         match self.questions_storage.get(topic.clone(), cost / self.current_multiplier) {
             Some(question) => {
                 self.set_state(State::Falsestart(question.clone(), cost as i64));
+                self.player_which_chose_question = self.current_player.clone();
                 let main_chat_message = format!(
                     "Играем тему {}, вопрос за {}",
                     topic,
@@ -1004,5 +1016,83 @@ mod test {
         };
 
         assert_eq!(table.to_string(), "|a     |x| |x|\n|привет| |x| |");
+    }
+
+    #[test]
+    fn test_closing_questions() {
+        let admin_id = UserId::from(1);
+        let p1_id = UserId::from(2);
+        let p2_id = UserId::from(3);
+        let mut game_state = create_game_state(admin_id);
+        game_state.add_player(p1_id, String::from("new_1"));
+        game_state.add_player(p2_id, String::from("new_2"));
+        game_state.start(admin_id);
+
+        let p1 = Player::new(String::from("new_1"), p1_id);
+        let p2 = Player::new(String::from("new_2"), p2_id);
+        let mut players_answered = HashSet::new();
+
+        // first question asked
+        game_state.next_question(admin_id);
+        game_state.set_current_player(p1_id).unwrap();
+        game_state.select_topic("Sport", p1_id);
+        game_state.select_question("Sport", 100, p1_id);
+        game_state.timeout();
+        match game_state.get_state() {
+            &State::CanAnswer(_, _) => {}
+            _ => {
+                panic!("Must be in CanAnswer state now: no players answered");
+            }
+        }
+
+        assert_eq!(game_state.players_answered_current_question, players_answered);
+
+        // first player answers wrongly
+        game_state.message(p1_id, String::from("1"));
+        game_state.no_reply(admin_id);
+        players_answered.insert(p1.clone());
+        assert_eq!(game_state.players_answered_current_question, players_answered);
+        match game_state.get_state() {
+            &State::CanAnswer(_, _) => {}
+            _ => {
+                panic!("Must be in CanAnswer state now: first player answered, but the second is up");
+            }
+        }
+
+        // second player answers wrongly
+        game_state.message(p2_id, String::from("2"));
+        game_state.no_reply(admin_id);
+        players_answered.insert(p2.clone());
+        assert_eq!(game_state.players_answered_current_question, players_answered);
+
+        // question must be closed by now
+        assert_eq!(game_state.get_state(), &State::Pause);
+
+        game_state.next_question(admin_id);
+        game_state.select_topic("Sport", p1_id);
+        game_state.select_question("Sport", 200, p1_id);
+        game_state.timeout();
+        match game_state.get_state() {
+            &State::CanAnswer(_, _) => {}
+            _ => {
+                panic!(format!("Must be in CanAnswer state now: no players answered; but in {:?}", game_state.get_state()));
+            }
+        }
+        players_answered.clear();
+        // this is the next question, so no players answered yet
+        assert_eq!(game_state.players_answered_current_question, players_answered);
+
+        // second player answers wrongly
+        game_state.message(p2_id, String::from("1"));
+        game_state.no_reply(admin_id);
+        players_answered.insert(p2.clone());
+        assert_eq!(game_state.players_answered_current_question, players_answered);
+        match game_state.get_state() {
+            &State::CanAnswer(_, _) => {}
+            _ => {
+                panic!("Must be in CanAnswer state now: second player answered, but the first is up");
+            }
+        }
+
     }
 }
