@@ -78,8 +78,6 @@ fn make_score_table_image(table_filename: &str, image_filename: &str) -> Result<
 }
 
 fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result<(), Error> {
-    // curl -F chat_id="-303858504" -F photo="@result.png"
-    // https://api.telegram.org/bot521483445:AAEUuf-U2xTkKxjPtUawncpyEGZXEGHaddI/sendPhoto
     let status = Command::new("curl")
         .arg("-F").arg(format!("chat_id={}", game_chat))
         .arg("-F").arg(format!("photo=@{}", filename))
@@ -108,8 +106,6 @@ fn send_score_table(pool: &CpuPool, table: gamestate::ScoreTable, game_chat: Cha
         )
     )
 }
-
-
 
 fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
     let mut inline_markup = InlineKeyboardMarkup::new();
@@ -411,14 +407,15 @@ fn main() {
                 gamestate::UiRequest::SendScoreTable(score_table) => {
                     let mut msg = SendMessage::new(config.game_chat, String::from("```\n") + &score_table.to_string() + "```");
                     let msg = msg.parse_mode(telegram_bot::ParseMode::Markdown);
-                    let sendfut : Box<Future<Item = (), Error = Error>> = convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
+                    let text_fallback : Box<Future<Item = (), Error = Error>> = convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
                     convert_future(
                         send_score_table(&thread_pool, score_table, config.game_chat, config.token.clone()).then(
                             |future| {
                                 match future {
                                     Ok(_) => Box::new(futures::done(Ok(()))),
                                     Err(errmsg) => {
-                                        eprintln!("Couldn't send score table image: '{:?}'", errmsg); sendfut
+                                        eprintln!("Couldn't send score table image: '{:?}'", errmsg);
+                                        text_fallback
                                     }
                                 }
                             }

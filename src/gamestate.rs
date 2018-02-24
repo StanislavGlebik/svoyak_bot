@@ -974,4 +974,35 @@ mod test {
         assert_eq!(game_state.get_player_score(p1), Some(100));
         assert_eq!(game_state.get_player_score(p2), Some(-100));
     }
+
+    #[test]
+    fn test_score_table_to_string() {
+        let table = ScoreTable {
+            scores: vec![10, 30, 20],
+            data: vec![
+                ScoreTableItem{
+                    name: String::from("a"),
+                    questions: vec![10, 20]
+                }
+            ]
+        };
+
+        assert_eq!(table.to_string(), "|a|x| |x|");
+
+        let table = ScoreTable {
+            scores: vec![10, 30, 20],
+            data: vec![
+                ScoreTableItem{
+                    name: String::from("a"),
+                    questions: vec![10, 20]
+                },
+                ScoreTableItem{
+                    name: String::from("привет"),
+                    questions: vec![30]
+                }
+            ]
+        };
+
+        assert_eq!(table.to_string(), "|a     |x| |x|\n|привет| |x| |");
+    }
 }
