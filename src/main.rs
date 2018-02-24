@@ -5,17 +5,25 @@ extern crate futures;
 extern crate telegram_bot;
 #[macro_use]
 extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
 extern crate tokio_core;
+extern crate futures_cpupool;
 
 use std::env;
 
 use failure::{err_msg, Error};
 use futures::{Future, IntoFuture, Sink, Stream};
 use futures::sync::mpsc;
+use futures_cpupool::CpuPool;
 use tokio_core::reactor::{Core, Timeout};
+use std::fs::File;
+use std::io::prelude::*;
+use std::process::Command;
 
-use telegram_bot::{Api, InlineKeyboardMarkup, InlineKeyboardButton, MessageKind};
+use telegram_bot::{Api, InlineKeyboardMarkup, InlineKeyboardButton, MessageKind, ChatId};
 use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream};
+
 
 mod gamestate;
 mod messages;
@@ -33,6 +41,71 @@ const CONFIG_VAR: &str = "GAME_CONFIG";
 
 const ANSWER_YES: &str = "AnswerYes";
 const ANSWER_NO: &str = "AnswerNo";
+
+const SCORE_TABLE_JSON_FILE: &str = "score_table.json";
+const SCORE_TABLE_PNG_FILE: &str = "score_table.png";
+
+fn dump_score_table_file(table: gamestate::ScoreTable, filename: &str) -> Result<(), Error> {
+    let mut file = File::create(filename)
+        .map_err(|error| {
+            err_msg(format!("Can't create file to dump score table ({:?})", error))
+        })?;
+    let data = serde_json::to_string(&table)
+        .map_err(|error| {
+            err_msg(format!("Failed while serializing score table ({:?})", error))
+        })?;
+    file.write_all(data.as_bytes())
+        .map_err(|error| {
+            err_msg(format!("Can't write to file while dumping score table ({:?})", error))
+        })
+}
+
+fn make_score_table_image(table_filename: &str, image_filename: &str) -> Result<(), Error> {
+    let status = Command::new("python3")
+        .arg("external/draw_table.py")
+        .arg(table_filename)
+        .arg(image_filename)
+        .status().map_err(
+            |error| {
+                err_msg(format!("Can't execute process to draw score table ({:?})", error))
+            }
+        )?;
+    if !status.success() {
+        Err(err_msg("Process drawing score table finished unsucessfully"))
+    } else {
+        Ok(())
+    }
+}
+
+fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result<(), Error> {
+    let status = Command::new("curl")
+        .arg("-F").arg(format!("chat_id={}", game_chat))
+        .arg("-F").arg(format!("photo=@{}", filename))
+        .arg(format!("https://api.telegram.org/bot{}/sendPhoto", token))
+        .status().map_err(
+            |error| {
+                err_msg(format!("Can't execute curl to send score table ({:?})", error))
+            }
+        )?;
+    if !status.success() {
+        Err(err_msg("Curl sending score table finished unsucessfully"))
+    } else {
+        Ok(())
+    }
+}
+
+fn send_score_table(pool: &CpuPool, table: gamestate::ScoreTable, game_chat: ChatId, token: String) -> Box<Future<Item = (), Error = Error>> {
+    Box::new(
+        pool.spawn_fn(
+            move || {
+                dump_score_table_file(table, SCORE_TABLE_JSON_FILE)?;
+                make_score_table_image(SCORE_TABLE_JSON_FILE, SCORE_TABLE_PNG_FILE)?;
+                send_photo_via_curl(game_chat, &token, SCORE_TABLE_PNG_FILE)?;
+                Ok(())
+            }
+        )
+    )
+}
 
 fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
     let mut inline_markup = InlineKeyboardMarkup::new();
@@ -168,10 +241,12 @@ where
 
 fn main() {
     let mut core = Core::new().unwrap();
-    let token = env::var(TOKEN_VAR).unwrap();
-    let api = Api::configure(token.clone()).build(core.handle()).unwrap();
 
-    let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok());
+    let token = env::var(TOKEN_VAR).unwrap();
+    let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok(), token);
+    let api = Api::configure(&config.token).build(core.handle()).unwrap();
+
+    let thread_pool = CpuPool::new(2);
 
     // Fetch new updates via long poll method
     let (sender, receiver) = mpsc::channel::<Option<Box<Future<Item = (), Error = Error>>>>(1);
@@ -328,6 +403,24 @@ fn main() {
                 }
                 gamestate::UiRequest::StopTimer => {
                     convert_future(sender.clone().send(None))
+                }
+                gamestate::UiRequest::SendScoreTable(score_table) => {
+                    let mut msg = SendMessage::new(config.game_chat, String::from("```\n") + &score_table.to_string() + "```");
+                    let msg = msg.parse_mode(telegram_bot::ParseMode::Markdown);
+                    let text_fallback : Box<Future<Item = (), Error = Error>> = convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
+                    convert_future(
+                        send_score_table(&thread_pool, score_table, config.game_chat, config.token.clone()).then(
+                            |future| {
+                                match future {
+                                    Ok(_) => Box::new(futures::done(Ok(()))),
+                                    Err(errmsg) => {
+                                        eprintln!("Couldn't send score table image: '{:?}'", errmsg);
+                                        text_fallback
+                                    }
+                                }
+                            }
+                        )
+                    )
                 }
             };
             res_future = convert_future(res_future.and_then(|_| fut));

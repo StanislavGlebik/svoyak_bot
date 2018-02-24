@@ -45,7 +45,63 @@ pub enum UiRequest {
     ChooseQuestion(String, Vec<usize>),
     AskAdminYesNo(String),
     SendToAdmin(String),
+    SendScoreTable(ScoreTable),
     StopTimer,
+}
+
+#[derive(Serialize)]
+struct ScoreTableItem {
+    name: String,
+    questions: Vec<usize>
+}
+
+#[derive(Serialize)]
+pub struct ScoreTable {
+    scores: Vec<usize>,
+    data: Vec<ScoreTableItem>
+}
+
+impl ScoreTable {
+    pub fn to_string(&self) -> String {
+        let mut rows : Vec<String> = Vec::new();
+
+        let mut topic_length : usize = 0;
+        for ref item in self.data.iter() {
+            let this_length = item.name.chars().count();
+            if this_length > topic_length {
+                topic_length = this_length;
+            }
+        }
+
+        for ref item in self.data.iter() {
+            let mut row = String::from("|");
+            row.push_str(&item.name);
+            while row.chars().count() < topic_length + 1 {
+                row.push_str(" ");
+            }
+            row.push_str("|");
+
+            for score in self.scores.iter() {
+                let mut found = false;
+                for this_score in item.questions.iter() {
+                    if this_score == score {
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    row.push_str("x");
+                } else {
+                    row.push_str(" ");
+                }
+                row.push_str("|");
+            }
+
+            rows.push(row);
+        }
+
+        rows.join("\n")
+    }
 }
 
 impl GameState {
@@ -237,6 +293,30 @@ impl GameState {
         }
     }
 
+    fn make_score_table(&self) -> ScoreTable {
+        let mut scores = Vec::new();
+        for i in 1..self.questions_per_topic + 1 {
+            scores.push(i * self.current_multiplier);
+        }
+        let mut data = Vec::new();
+        for (topic, scores) in self.questions.iter() {
+            let topic_name = topic.clone();
+            let question_scores = scores.clone();
+
+
+            data.push(ScoreTableItem{
+                name: topic_name,
+                questions: question_scores
+            })
+        }
+
+        ScoreTable {
+            scores,
+            data
+        }
+    }
+
+
     pub fn next_question(&mut self, user: UserId) -> Vec<UiRequest> {
         if user != self.admin_user {
             println!("non-admin user tried to select next question");
@@ -255,6 +335,7 @@ impl GameState {
             .filter(|&(_, costs)| !costs.is_empty())
             .map(|(topic, _)| topic.clone()).collect();
         vec![
+            UiRequest::SendScoreTable(self.make_score_table()),
             UiRequest::ChooseTopic(current_player_name, topics),
         ]
     }
@@ -892,5 +973,36 @@ mod test {
 
         assert_eq!(game_state.get_player_score(p1), Some(100));
         assert_eq!(game_state.get_player_score(p2), Some(-100));
+    }
+
+    #[test]
+    fn test_score_table_to_string() {
+        let table = ScoreTable {
+            scores: vec![10, 30, 20],
+            data: vec![
+                ScoreTableItem{
+                    name: String::from("a"),
+                    questions: vec![10, 20]
+                }
+            ]
+        };
+
+        assert_eq!(table.to_string(), "|a|x| |x|");
+
+        let table = ScoreTable {
+            scores: vec![10, 30, 20],
+            data: vec![
+                ScoreTableItem{
+                    name: String::from("a"),
+                    questions: vec![10, 20]
+                },
+                ScoreTableItem{
+                    name: String::from("привет"),
+                    questions: vec![30]
+                }
+            ]
+        };
+
+        assert_eq!(table.to_string(), "|a     |x| |x|\n|привет| |x| |");
     }
 }
