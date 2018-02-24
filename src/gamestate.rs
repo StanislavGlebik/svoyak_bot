@@ -342,6 +342,61 @@ impl GameState {
         ]
     }
 
+    fn close_unanswered_question(&mut self, question: Question, reason: Option<String>) -> Vec<UiRequest> {
+        self.set_state(State::Pause);
+        // Haven't received correct answer, so current player is which
+        // asked the question (http://vladimirkhil.com/tv/game/10)
+        self.current_player = self.player_which_chose_question.clone();
+
+        let current_player_name = match self.current_player {
+            Some(ref player) => player.name(),
+            None => {panic!("Trying to process question, but no current player set")}
+        };
+        let msg = format!(
+            "Правильный ответ: {}\nСледующий вопрос выбирает {}",
+            question.answer(),
+            current_player_name
+        );
+
+        if let Some(reason_message) = reason {
+            vec![
+                UiRequest::SendTextToMainChat(reason_message),
+                UiRequest::SendTextToMainChat(msg)
+            ]
+        } else {
+            vec![
+                UiRequest::SendTextToMainChat(msg)
+            ]
+        }
+    }
+
+    fn close_answered_question(&mut self, reason: Option<String>) -> Vec<UiRequest> {
+        self.set_state(State::Pause);
+        self.player_which_chose_question = None;
+
+        let current_player_name = match self.current_player {
+            Some(ref player) => player.name(),
+            None => {panic!("Trying to process question, but no current player set")}
+        };
+        let msg = format!(
+            "Игру продолжает {}",
+            current_player_name
+        );
+
+        if let Some(reason_message) = reason {
+            vec![
+                UiRequest::SendTextToMainChat(reason_message),
+                UiRequest::SendTextToMainChat(msg)
+            ]
+        } else {
+            vec![
+                UiRequest::SendTextToMainChat(msg)
+            ]
+        }
+    }
+
+
+
     pub fn yes_reply(&mut self, user: UserId) -> Vec<UiRequest> {
         if user != self.admin_user {
             println!("non-admin yes reply");
@@ -350,19 +405,7 @@ impl GameState {
         if let State::Answering(_, cost) = self.state {
             match self.update_current_player_score(cost) {
                 Ok(_) => {
-                    self.set_state(State::WaitingForTopic);
-                    let current_player_name = match self.current_player {
-                        Some(ref player) => player.name(),
-                        None => {
-                            return vec![];
-                        }
-                    };
-                    let msg = format!(
-                        "{}\nИгру продолжает {}",
-                        CORRECT_ANSWER,
-                        current_player_name
-                    );
-                    vec![UiRequest::SendTextToMainChat(msg)]
+                    self.close_answered_question(Some(String::from(CORRECT_ANSWER)))
                 }
                 Err(err_msg) => {
                     println!("{}", err_msg);
@@ -405,33 +448,6 @@ impl GameState {
         }
     }
 
-    fn close_unanswered_question(&mut self, question: Question, reason: Option<String>) -> Vec<UiRequest> {
-        self.set_state(State::Pause);
-        // Haven't received correct answer, so current player is which
-        // asked the question (http://vladimirkhil.com/tv/game/10)
-        self.current_player = self.player_which_chose_question.clone();
-
-        let current_player_name = match self.current_player {
-            Some(ref player) => player.name(),
-            None => {panic!("Trying to process question, but no current player set")}
-        };
-        let msg = format!(
-            "Правильный ответ: {}\nСледующий вопрос выбирает {}",
-            question.answer(),
-            current_player_name
-        );
-
-        if let Some(reason_message) = reason {
-            vec![
-                UiRequest::SendTextToMainChat(reason_message),
-                UiRequest::SendTextToMainChat(msg)
-            ]
-        } else {
-            vec![
-                UiRequest::SendTextToMainChat(msg)
-            ]
-        }
-    }
 
     pub fn timeout(&mut self) -> Vec<UiRequest> {
         eprintln!("Scheduled timeout occurred");
@@ -1016,6 +1032,47 @@ mod test {
         };
 
         assert_eq!(table.to_string(), "|a     |x| |x|\n|привет| |x| |");
+    }
+
+    #[test]
+    fn test_players_turns() {
+        let admin = UserId::from(1);
+        let p1 = UserId::from(2);
+        let p2 = UserId::from(3);
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1, String::from("new_1"));
+        game_state.add_player(p2, String::from("new_2"));
+        game_state.start(admin);
+
+        // first no, second no
+        game_state.next_question(admin);
+        game_state.set_current_player(p1).unwrap();
+        game_state.select_topic("Sport", p1);
+        game_state.select_question("Sport", 100, p1);
+        game_state.timeout();
+        game_state.message(p1, String::from("1"));
+        game_state.no_reply(admin);
+        game_state.message(p2, String::from("1"));
+        game_state.no_reply(admin);
+        // no correct answer, so question is closed
+        assert_eq!(game_state.get_state(), &State::Pause);
+        // checking, that despite the second player answered last
+        // the current player is the first one
+        assert_eq!(game_state.get_current_player().map(|p| p.id()), Some(p1));
+
+        // first no, second yes
+        game_state.next_question(admin);
+        game_state.select_topic("Sport", p1);
+        game_state.select_question("Sport", 200, p1);
+        game_state.timeout();
+        game_state.message(p1, String::from("1"));
+        game_state.no_reply(admin);
+        game_state.message(p2, String::from("1"));
+        game_state.yes_reply(admin);
+        // correct answer, so question is closed
+        assert_eq!(game_state.get_state(), &State::Pause);
+        // checking, that the second player caught turn by correct answer
+        assert_eq!(game_state.get_current_player().map(|p| p.id()), Some(p2));
     }
 
     #[test]
