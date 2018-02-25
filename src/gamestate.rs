@@ -9,6 +9,7 @@ use player::Player;
 use telegram_config::TourDescription;
 use question::Question;
 use questionsstorage::QuestionsStorage;
+use std;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
@@ -404,6 +405,83 @@ impl GameState {
                 UiRequest::SendTextToMainChat(msg)
             ]
         }
+    }
+
+    fn parse_bid(bid: &str, score: i64) -> Result<i64, std::num::ParseIntError> {
+        let all_in = vec!["ва-банк", "вабанк", "ва банк"];
+        let pass = vec!["пас"];
+        let bid = bid.to_lowercase();
+
+        for opt in all_in.iter() {
+            if bid == *opt {
+                return Ok(score);
+            }
+        }
+        for opt in pass.iter() {
+            if bid == *opt {
+                return Ok(-1);
+            }
+        }
+
+        bid.parse::<i64>()
+    }
+
+    fn next_player_to_bid(current_player: &Player, bid: u64, scores: &HashMap<Player, i64>, passed_players: &HashSet<Player>) -> Option<Player> {
+        let bid = bid as i64;
+        let mut players = Vec::new();
+        for (player, score) in scores.iter() {
+            players.push((player.clone(), *score));
+        }
+        let comparator = |a : &(Player, i64), b : &(Player, i64)| {
+            if a.1 != b.1 {
+                a.1.cmp(&b.1)
+            } else {
+                a.0.name().cmp(b.0.name())
+            }
+        };
+        players.sort_unstable_by(comparator);
+
+        let all_in = *scores.get(&current_player).expect("Can't get bid for the current player") == bid;
+        let can_bid = |player| {
+            if passed_players.contains(player) {
+                return false;
+            }
+            let score = scores[player];
+            if score < bid {
+                return false;
+            }
+            if score > bid {
+                return true;
+            }
+            score == bid && !all_in
+        };
+
+        let mut found_player = false;
+        for &(ref player, _) in players.iter() {
+            if player == current_player {
+                found_player = true;
+                continue;
+            }
+            if !found_player {
+                continue;
+            }
+
+            if can_bid(player) {
+                return Some(player.clone());
+            }
+        }
+
+        for &(ref player, _) in players.iter() {
+            if player == current_player {
+                break;
+            }
+
+            if can_bid(player) {
+                return Some(player.clone());
+            }
+        }
+
+        None
     }
 
     pub fn yes_reply(&mut self, user: UserId) -> Vec<UiRequest> {
@@ -989,7 +1067,7 @@ mod test {
         game_state.start(admin);
         game_state.next_tour(admin);
         game_state.next_question(admin);
- 
+
         select_question(&mut game_state, "Movies", p1, 200);
         game_state.message(p1, String::from("1"));
         game_state.yes_reply(admin);
@@ -1243,12 +1321,169 @@ mod test {
         game_state.set_current_player(p1_id).unwrap();
         game_state.select_topic("Sport", p1_id);
         game_state.select_question("Sport", 100, p1_id);
-        
+
         match game_state.get_state() {
             &State::Pause => {}
             _ => {
                 panic!("Manual question should set game state to pause");
             }
         }
+    }
+
+    #[test]
+    fn test_next_player_to_bid() {
+        let p1 = Player::new(String::from("Stas"), UserId::from(1));
+        let p2 = Player::new(String::from("Sasha"), UserId::from(2));
+        let p3 = Player::new(String::from("Masha"), UserId::from(3));
+
+        let mut score = HashMap::new();
+        score.insert(p1.clone(), 1000);
+        score.insert(p2.clone(), 700);
+        score.insert(p3.clone(), 10000);
+        let mut passed = HashSet::new();
+        passed.insert(p2.clone());
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p1, 800, &score, &passed
+            ),
+            Some(p3.clone())
+        );
+
+        let mut score = HashMap::new();
+        score.insert(p1.clone(), 1000);
+        score.insert(p2.clone(), 700);
+        score.insert(p3.clone(), 10000);
+        let mut passed = HashSet::new();
+        passed.insert(p2.clone());
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p3, 800, &score, &passed
+            ),
+            Some(p1.clone())
+        );
+
+        // Sasha got auction, has nominal bid
+        // so Stas is the next bidder, because he
+        // obviously has lesser score, than Masha
+        let mut score = HashMap::new();
+        score.insert(p1.clone(), 1000);
+        score.insert(p2.clone(), 700);
+        score.insert(p3.clone(), 10000);
+        let passed = HashSet::new();
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p2, 800, &score, &passed
+            ),
+            Some(p1.clone())
+        );
+
+        // Masha got bid that no one can meet
+        let mut score = HashMap::new();
+        score.insert(p1.clone(), 1000);
+        score.insert(p2.clone(), 700);
+        score.insert(p3.clone(), 10000);
+        let passed = HashSet::new();
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p3, 1500, &score, &passed
+            ),
+            None
+        );
+
+
+        // scenario: 0
+        // Sasha got nominal of 600, Stas is the next bidder
+        // because he has less score than Masha (again, obviosly)
+        let mut score = HashMap::new();
+        score.insert(p1.clone(), 1000);
+        score.insert(p2.clone(), 700);
+        score.insert(p3.clone(), 10000);
+        let mut passed = HashSet::new();
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p2, 600, &score, &passed
+            ),
+            Some(p1.clone())
+        );
+        // Stas takes risk of having 601 bid
+        // the next bidder is Masha
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p1, 601, &score, &passed
+            ),
+            Some(p3.clone())
+        );
+        // Masha reads BBC news, so she don't want
+        // to play such an easy game and passes
+        // Sasha is the next bidder
+        passed.insert(p3.clone());
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p1, 601, &score, &passed
+            ),
+            Some(p2.clone())
+        );
+        // Sasha tries to trick Stas and go all-in,
+        // so Stas will lose all in a presumably difficult question
+        // What would Stas do?
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p2, 700, &score, &passed
+            ),
+            Some(p1.clone())
+        );
+        // he passes, so Sasha has played herself
+        passed.insert(p1.clone());
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p2, 700, &score, &passed
+            ),
+            None
+        );
+
+        // scenario: 1
+        // Masha got nominal of 800, Sasha is out before she's in
+        // Stas is the next bidder
+        let mut score = HashMap::new();
+        score.insert(p1.clone(), 1000);
+        score.insert(p2.clone(), 700);
+        score.insert(p3.clone(), 10000);
+        let mut passed = HashSet::new();
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p3, 800, &score, &passed
+            ),
+            Some(p1.clone())
+        );
+        // Stas plays 5D tic-tac-toe, and takes a bid of 813
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p1, 813, &score, &passed
+            ),
+            Some(p3.clone())
+        );
+        // Masha doesn't get Stas's complex logic and tries him
+        // with the bid of 1000
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p3, 1000, &score, &passed
+            ),
+            Some(p1.clone())
+        );
+        // Stas isn't bitchmade and goes all in
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p1, 1000, &score, &passed
+            ),
+            Some(p3.clone())
+        );
+        // Masha is off to reading bbc, so Stas is playing
+        passed.insert(p3.clone());
+        assert_eq!(
+            GameState::next_player_to_bid(
+                &p1, 1000, &score, &passed
+            ),
+            None
+        );
     }
 }
