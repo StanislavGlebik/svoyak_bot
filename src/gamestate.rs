@@ -588,6 +588,30 @@ impl GameState {
         vec![UiRequest::SendTextToMainChat(format!("{}", res))]
     }
 
+    pub fn update_score(&mut self, name: String, newscore: i64, user: UserId) -> Vec<UiRequest> {
+        if user != self.admin_user {
+            eprintln!("non admin user tried to update the score");
+            return vec![];
+        }
+
+        let player = match self.find_player_by_name(&name) {
+            Some(player) => {
+                player.clone()
+            }
+            None => {
+                eprintln!("{} not found", name);
+                return vec![];
+            }
+        };
+
+        if let Some(score) = self.players.get_mut(&player) {
+            eprintln!("{} score updated", name);
+            *score = newscore;
+        } else {
+            eprintln!("internal error: {} not found", name);
+        }
+        vec![]
+    }
 
     fn reload_available_questions(&mut self) {
         self.questions.clear();

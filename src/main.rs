@@ -153,6 +153,7 @@ enum TextMessage {
     StartGame,
     CurrentPlayer,
     NextTour,
+    UpdateScore(String, i64),
 }
 
 enum CallbackMessage {
@@ -185,6 +186,19 @@ fn parse_text_message(data: &String) -> TextMessage {
 
     if data == "/nexttour" {
         return TextMessage::NextTour;
+    }
+
+    if data.starts_with("/updatescore ") {
+        let data = data.trim_left_matches("/updatescore ");
+        let split: Vec<_> = data.rsplitn(2, ' ').collect();
+        if split.len() == 2 {
+            let name = split.get(1).unwrap();
+            let newscore = split.get(0).unwrap();
+            let score = newscore.parse();
+            if let Ok(score) = score {
+                return TextMessage::UpdateScore((*name).into(), score);
+            }
+        }
     }
 
     if data == BEGIN_CMD {
@@ -294,6 +308,9 @@ fn main() {
                                 }
                                 TextMessage::NextTour => {
                                     gamestate.next_tour(message.from.id)
+                                }
+                                TextMessage::UpdateScore(name, newscore) => {
+                                    gamestate.update_score(name, newscore, message.from.id)
                                 }
                             }
                         } else {
