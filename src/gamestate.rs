@@ -16,6 +16,7 @@ enum State {
     WaitingForPlayersToJoin,
     WaitingForTopic,
     WaitingForQuestion,
+    BeforeQuestionAsked(Question, i64),
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
     Answering(Question, i64),
@@ -40,7 +41,6 @@ pub struct GameState {
 
 pub enum UiRequest {
     SendTextToMainChat(String),
-    SendTextToMainChatWithDelay(String, Duration),
     Timeout(Option<String>, Duration),
     ChooseTopic(String, Vec<String>),
     ChooseQuestion(String, Vec<usize>),
@@ -157,6 +157,9 @@ impl GameState {
             }
             State::WaitingForPlayersToJoin => {
                 eprintln!("Now waiting for players to join the game");
+            }
+            State::BeforeQuestionAsked(_, _) => {
+                eprintln!("Now waiting for the question to be sent to the main chat");
             }
             State::Falsestart(_, _) => {
                 eprintln!("Now it would be a falsestart to answer the question");
@@ -451,6 +454,15 @@ impl GameState {
 
     pub fn timeout(&mut self) -> Vec<UiRequest> {
         eprintln!("Scheduled timeout occurred");
+        if let State::BeforeQuestionAsked(question, cost) = self.state.clone() {
+            eprintln!("Falsestart section is about to start");
+            self.set_state(State::Falsestart(question.clone(), cost));
+            return vec![
+                UiRequest::SendTextToMainChat(question.question()),
+                UiRequest::Timeout(Some("!".into()), Duration::new(3, 0)),
+            ];
+        }
+
         if let State::Falsestart(question, cost) = self.state.clone() {
             eprintln!("Falsestart section if finished, accepting answer now");
             self.set_state(State::CanAnswer(question.clone(), cost));
@@ -537,16 +549,13 @@ impl GameState {
 
         match self.questions_storage.get(topic.clone(), cost / self.current_multiplier) {
             Some(question) => {
-                self.set_state(State::Falsestart(question.clone(), cost as i64));
+                self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
                 self.player_which_chose_question = self.current_player.clone();
                 let main_chat_message = format!(
                     "Играем тему {}, вопрос за {}",
                     topic,
                     cost
                 );
-                let question_msg = format!("{}", question.question());
-                let delay_before_question_secs = 5;
-                let delay_falsestart_secs = delay_before_question_secs + 1;
                 vec![
                     UiRequest::SendToAdmin(format!(
                         "question: {}\nanswer: {}",
@@ -554,11 +563,7 @@ impl GameState {
                         question.answer()
                     )),
                     UiRequest::SendTextToMainChat(main_chat_message),
-                    UiRequest::SendTextToMainChatWithDelay(
-                        question_msg,
-                        Duration::from_secs(delay_before_question_secs)
-                    ),
-                    UiRequest::Timeout(Some("!".to_string()), Duration::from_secs(delay_falsestart_secs)),
+                    UiRequest::Timeout(None, Duration::from_secs(5)),
                 ]
             }
             None => {
@@ -793,6 +798,15 @@ mod test {
         ).unwrap()
     }
 
+    fn select_question<T: ToString>(game_state: &mut GameState, topic: T, player: UserId, cost: usize) {
+        let topic = topic.to_string();
+        game_state.set_current_player(player).unwrap();
+        game_state.select_topic(topic.clone(), player);
+        game_state.select_question(topic, cost, player);
+        game_state.timeout();
+        game_state.timeout();
+    }
+
     #[test]
     fn test_add_player() {
         let mut game_state = create_game_state(UserId::from(1));
@@ -850,6 +864,7 @@ mod test {
         }
 
         game_state.select_question("Sport", 100, p1);
+        game_state.timeout();
         match game_state.get_state() {
             &State::Falsestart(_, _) => {}
             _ => {
@@ -945,11 +960,8 @@ mod test {
         game_state.start(admin);
         game_state.next_tour(admin);
         game_state.next_question(admin);
-
-        game_state.select_topic("Movies", p1);
-        game_state.select_question("Movies", 200, p1);
-
-        game_state.timeout();
+ 
+        select_question(&mut game_state, "Movies", p1, 200);
         game_state.message(p1, String::from("1"));
         game_state.yes_reply(admin);
 
@@ -967,6 +979,7 @@ mod test {
 
         game_state.select_topic("Sport", p1);
         game_state.select_question("Sport", 200, p1);
+        game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
         game_state.message(p1, String::from("1"));
@@ -993,6 +1006,7 @@ mod test {
         game_state.set_current_player(p1).unwrap();
         game_state.select_topic("Sport", p1);
         game_state.select_question("Sport", 100, p1);
+        game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
         game_state.message(p2, String::from("1"));
@@ -1016,6 +1030,7 @@ mod test {
         game_state.set_current_player(p1).unwrap();
         game_state.select_topic("Sport", p1);
         game_state.select_question("Sport", 100, p1);
+        game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
         game_state.message(p2, String::from("1"));
@@ -1070,10 +1085,7 @@ mod test {
 
         // first no, second no
         game_state.next_question(admin);
-        game_state.set_current_player(p1).unwrap();
-        game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 100, p1);
-        game_state.timeout();
+        select_question(&mut game_state, "Sport", p1, 100);
         game_state.message(p1, String::from("1"));
         game_state.no_reply(admin);
         game_state.message(p2, String::from("1"));
@@ -1086,9 +1098,7 @@ mod test {
 
         // first no, second yes
         game_state.next_question(admin);
-        game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 200, p1);
-        game_state.timeout();
+        select_question(&mut game_state, "Sport", p1, 200);
         game_state.message(p1, String::from("1"));
         game_state.no_reply(admin);
         game_state.message(p2, String::from("1"));
@@ -1115,10 +1125,7 @@ mod test {
 
         // first question asked
         game_state.next_question(admin_id);
-        game_state.set_current_player(p1_id).unwrap();
-        game_state.select_topic("Sport", p1_id);
-        game_state.select_question("Sport", 100, p1_id);
-        game_state.timeout();
+        select_question(&mut game_state, "Sport", p1_id, 100);
         match game_state.get_state() {
             &State::CanAnswer(_, _) => {}
             _ => {
@@ -1150,9 +1157,7 @@ mod test {
         assert_eq!(game_state.get_state(), &State::Pause);
 
         game_state.next_question(admin_id);
-        game_state.select_topic("Sport", p1_id);
-        game_state.select_question("Sport", 200, p1_id);
-        game_state.timeout();
+        select_question(&mut game_state, "Sport", p1_id, 200);
         match game_state.get_state() {
             &State::CanAnswer(_, _) => {}
             _ => {

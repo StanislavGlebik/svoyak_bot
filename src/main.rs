@@ -354,13 +354,6 @@ fn main() {
                     let msg = SendMessage::new(config.game_chat, msg);
                     convert_future(api.send(msg))
                 }
-                gamestate::UiRequest::SendTextToMainChatWithDelay(msg, delay) => {
-                    let msg = SendMessage::new(config.game_chat, msg);
-                    let timeout = Timeout::new(delay, &handle).expect("cannot create timer");
-                    let sendfut = api.send(msg).map_err(|_| err_msg("send failed"));
-                    let fut = timeout.map_err(|_| err_msg("timeout error")).and_then(|_| sendfut);
-                    convert_future(fut)
-                }
                 gamestate::UiRequest::Timeout(msg, duration) => {
                     let timer = Timeout::new(duration, &handle).expect("cannot create timer");
                     let timer = timer.map_err(|_err| err_msg("timer error happened"));
