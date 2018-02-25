@@ -36,6 +36,7 @@ pub struct GameState {
     tours: Vec<TourDescription>,
     current_tour: usize,
     current_multiplier: usize,
+    manual_questions: Vec<(String, usize)>,
 }
 
 pub enum UiRequest {
@@ -116,6 +117,7 @@ impl GameState {
             questions_storage: Box<QuestionsStorage>,
             questions_per_topic: usize,
             tours: Vec<TourDescription>,
+            manual_questions: Vec<(String, usize)>,
     ) -> Result<Self, Error> {
         if questions_per_topic == 0 {
             return Err(err_msg(String::from("questions per topic can't be zero")));
@@ -146,6 +148,7 @@ impl GameState {
             tours,
             current_tour: 0,
             current_multiplier: 0,
+            manual_questions,
         })
     }
 
@@ -403,8 +406,6 @@ impl GameState {
         }
     }
 
-
-
     pub fn yes_reply(&mut self, user: UserId) -> Vec<UiRequest> {
         if user != self.admin_user {
             println!("non-admin yes reply");
@@ -554,22 +555,36 @@ impl GameState {
 
         match self.questions_storage.get(topic.clone(), cost / self.current_multiplier) {
             Some(question) => {
-                self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
-                self.player_which_chose_question = self.current_player.clone();
-                let main_chat_message = format!(
-                    "Играем тему {}, вопрос за {}",
-                    topic,
-                    cost
-                );
-                vec![
-                    UiRequest::SendToAdmin(format!(
-                        "question: {}\nanswer: {}",
-                        question.question(),
-                        question.answer()
-                    )),
-                    UiRequest::SendTextToMainChat(main_chat_message),
-                    UiRequest::Timeout(None, Delay::Medium),
-                ]
+                if self.is_manual(&topic, &cost) {
+                    eprintln!("manual question");
+                    self.set_state(State::Pause);
+                    vec![
+                        UiRequest::SendToAdmin(format!(
+                            "question: {}\nanswer: {}",
+                            question.question(),
+                            question.answer()
+                        )),
+                        UiRequest::SendTextToMainChat("Вопрос играется вручную".into()),
+                    ]
+                } else {
+                    eprintln!("automatic question");
+                    self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
+                    self.player_which_chose_question = self.current_player.clone();
+                    let main_chat_message = format!(
+                        "Играем тему {}, вопрос за {}",
+                        topic,
+                        cost
+                    );
+                    vec![
+                        UiRequest::SendToAdmin(format!(
+                            "question: {}\nanswer: {}",
+                            question.question(),
+                            question.answer()
+                        )),
+                        UiRequest::SendTextToMainChat(main_chat_message),
+                        UiRequest::Timeout(None, Delay::Medium),
+                    ]
+                }
             }
             None => {
                 println!("internal error: question is not found");
@@ -664,6 +679,11 @@ impl GameState {
             }
             None => Err("internal error: current player is None!".to_string()),
         }
+    }
+
+    fn is_manual(&self, cur_topic: &String, cur_cost: &usize) -> bool {
+        self.manual_questions.iter()
+            .find(|&&(ref topic, ref cost)| cur_topic == topic && cur_cost == cost).is_some()
     }
 
     fn is_current_player(&self, id: UserId) -> bool {
@@ -800,6 +820,7 @@ mod test {
             questions_storage,
             5,
             tours,
+            vec![],
         ).unwrap()
     }
 
@@ -923,6 +944,7 @@ mod test {
             questions_storage,
             0,
             tours.clone(),
+            vec![],
         ).is_err());
 
         // Non existing topic
@@ -932,6 +954,7 @@ mod test {
             questions_storage,
             5,
             tours,
+            vec![],
         ).is_err());
 
 
@@ -953,6 +976,7 @@ mod test {
             questions_storage,
             6,
             tours,
+            vec![],
         ).is_err());
     }
 
@@ -1185,5 +1209,46 @@ mod test {
             }
         }
 
+    }
+
+    #[test]
+    fn test_manual_questions() {
+        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let tours = vec![
+            TourDescription {
+                multiplier: 100,
+                topics: vec![
+                    Topic {
+                        name: "Sport".to_string(),
+                    }
+                ]
+            },
+        ];
+
+        let admin_id = UserId::from(1);
+        let p1_id = UserId::from(2);
+
+        let mut game_state = GameState::new(
+            admin_id,
+            questions_storage,
+            5,
+            tours,
+            vec![("Sport".to_string(), 100)],
+        ).unwrap();
+
+        game_state.add_player(p1_id, String::from("new_1"));
+        game_state.start(admin_id);
+
+        game_state.next_question(admin_id);
+        game_state.set_current_player(p1_id).unwrap();
+        game_state.select_topic("Sport", p1_id);
+        game_state.select_question("Sport", 100, p1_id);
+        
+        match game_state.get_state() {
+            &State::Pause => {}
+            _ => {
+                panic!("Manual question should set game state to pause");
+            }
+        }
     }
 }

@@ -15,6 +15,12 @@ pub struct TourDescription {
     pub topics: Vec<Topic>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Question {
+    topic: String,
+    cost: usize,
+}
+
 #[derive(Serialize, Deserialize)]
 struct RawConfig {
     pub admin_id: i64,
@@ -22,6 +28,7 @@ struct RawConfig {
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
     pub tours: Vec<TourDescription>,
+    pub manual_questions: Option<Vec<Question>>,
 }
 
 pub struct Config {
@@ -32,6 +39,7 @@ pub struct Config {
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
     pub tours: Vec<TourDescription>,
+    pub manual_questions: Vec<(String, usize)>,
 }
 
 const DEFAULT_ADMIN_ID: i64 = 125732128;
@@ -58,6 +66,7 @@ impl RawConfig {
                     questions_storage_path: "storage.csv".into(),
                     questions_per_topic: 5,
                     tours: vec![],
+                    manual_questions: None,
                 }
             }
         }
@@ -77,6 +86,8 @@ impl Config {
             questions_storage_path: config.questions_storage_path,
             questions_per_topic: config.questions_per_topic,
             tours: config.tours,
+            manual_questions: config.manual_questions
+                .unwrap_or(vec![]).into_iter().map(|question| (question.topic, question.cost)).collect(),
         }
     }
 }

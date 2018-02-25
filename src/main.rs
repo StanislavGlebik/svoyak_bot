@@ -280,6 +280,7 @@ fn main() {
         question_storage,
         config.questions_per_topic,
         config.tours.clone(),
+        config.manual_questions.clone(),
     ).expect("failed to create gamestate");
 
     let fut = requests_stream.for_each(move |request| {
