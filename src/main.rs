@@ -19,6 +19,7 @@ use futures_cpupool::CpuPool;
 use tokio_core::reactor::{Core, Timeout};
 use std::fs::File;
 use std::io::prelude::*;
+use std::time::Duration;
 use std::process::Command;
 
 use telegram_bot::{Api, InlineKeyboardMarkup, InlineKeyboardButton, MessageKind, ChatId};
@@ -354,7 +355,12 @@ fn main() {
                     let msg = SendMessage::new(config.game_chat, msg);
                     convert_future(api.send(msg))
                 }
-                gamestate::UiRequest::Timeout(msg, duration) => {
+                gamestate::UiRequest::Timeout(msg, delay) => {
+                    let duration = match delay {
+                        gamestate::Delay::Short => Duration::new(3, 0),
+                        gamestate::Delay::Medium => Duration::new(5, 0),
+                        gamestate::Delay::Long => Duration::new(10, 0),
+                    };
                     let timer = Timeout::new(duration, &handle).expect("cannot create timer");
                     let timer = timer.map_err(|_err| err_msg("timer error happened"));
                     let timer_and_msg = match msg {

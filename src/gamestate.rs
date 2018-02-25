@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 use std::collections::HashSet;
 
 use telegram_bot::UserId;
@@ -41,13 +40,19 @@ pub struct GameState {
 
 pub enum UiRequest {
     SendTextToMainChat(String),
-    Timeout(Option<String>, Duration),
+    Timeout(Option<String>, Delay),
     ChooseTopic(String, Vec<String>),
     ChooseQuestion(String, Vec<usize>),
     AskAdminYesNo(String),
     SendToAdmin(String),
     SendScoreTable(ScoreTable),
     StopTimer,
+}
+
+pub enum Delay {
+    Short,
+    Medium,
+    Long
 }
 
 #[derive(Serialize)]
@@ -434,7 +439,7 @@ impl GameState {
                         self.set_state(State::CanAnswer(question, cost));
                         self.players_falsestarted.clear();
                         vec![
-                            UiRequest::Timeout(Some(INCORRECT_ANSWER.to_string()), Duration::new(3, 0)),
+                            UiRequest::Timeout(Some(INCORRECT_ANSWER.to_string()), Delay::Long),
                         ]
                     } else {
                         self.close_unanswered_question(question, Some(String::from("Все попытались, но ни у кого не получилось")))
@@ -459,7 +464,7 @@ impl GameState {
             self.set_state(State::Falsestart(question.clone(), cost));
             return vec![
                 UiRequest::SendTextToMainChat(question.question()),
-                UiRequest::Timeout(Some("!".into()), Duration::new(3, 0)),
+                UiRequest::Timeout(Some("!".into()), Delay::Short),
             ];
         }
 
@@ -467,7 +472,7 @@ impl GameState {
             eprintln!("Falsestart section if finished, accepting answer now");
             self.set_state(State::CanAnswer(question.clone(), cost));
             return vec![
-                UiRequest::Timeout(None, Duration::new(8, 0)),
+                UiRequest::Timeout(None, Delay::Long),
             ];
         };
 
@@ -563,7 +568,7 @@ impl GameState {
                         question.answer()
                     )),
                     UiRequest::SendTextToMainChat(main_chat_message),
-                    UiRequest::Timeout(None, Duration::from_secs(5)),
+                    UiRequest::Timeout(None, Delay::Medium),
                 ]
             }
             None => {
