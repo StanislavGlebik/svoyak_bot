@@ -11,6 +11,28 @@ use question::Question;
 use questionsstorage::QuestionsStorage;
 use std;
 
+/// The state, when players are bidding for the auction
+/// and winner is no decided yet. In this state players can pass
+///
+/// current_player is the player, who has highest bid so far
+/// so if all other players passed, (s)he will play
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BiddingState {
+    question: Question,
+    current_player: Player,
+    bid: u64,
+    passed: HashSet<Player>
+}
+
+/// In this state auction is won by player, but the final
+/// bid is no decided yet. Here player can't pass
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FinishingBidState {
+    question: Question,
+    player: Player,
+    bid: u64
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
     WaitingForPlayersToJoin,
@@ -20,6 +42,8 @@ enum State {
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
     Answering(Question, i64),
+    Bidding(BiddingState),
+    FinishingBid(FinishingBidState),
     Pause,
 }
 
@@ -181,6 +205,12 @@ impl GameState {
             }
             State::WaitingForTopic => {
                 eprintln!("Waiting for the choice of topic");
+            }
+            State::Bidding(_) => {
+                eprintln!("Now bidding is on");
+            }
+            State::FinishingBid(ref bid_state) => {
+                eprintln!("Auction was won by {:?}, now it's time to finalize the bid", &bid_state.player);
             }
         }
     }
@@ -405,6 +435,10 @@ impl GameState {
                 UiRequest::SendTextToMainChat(msg)
             ]
         }
+    }
+
+    fn check_bid_while_bidding(&self, player: &Player, bid: i64) -> Result<bool, String> {
+        Err(String::from("Not implemented yet"))
     }
 
     fn parse_bid(bid: &str, score: i64) -> Result<i64, std::num::ParseIntError> {
@@ -1328,6 +1362,50 @@ mod test {
                 panic!("Manual question should set game state to pause");
             }
         }
+    }
+
+    #[test]
+    fn test_parse_bid() {
+        assert_eq!(GameState::parse_bid("вабанк", 100), Ok(100));
+        assert_eq!(GameState::parse_bid("Вабанк", 100), Ok(100));
+        assert_eq!(GameState::parse_bid("ва-банк", 100), Ok(100));
+        assert_eq!(GameState::parse_bid("Ва-банк", 100), Ok(100));
+        assert_eq!(GameState::parse_bid("пас", 100), Ok(-1));
+        assert_eq!(GameState::parse_bid("Пас", 100), Ok(-1));
+        // This method won't check, that the bid is higher than score
+        assert_eq!(GameState::parse_bid("123", 100), Ok(123));
+        // This method won't check, that the bid is negative
+        assert_eq!(GameState::parse_bid("-50", 100), Ok(-50));
+        assert!(GameState::parse_bid("М?", 100).is_err(), "Should fail");
+        assert!(GameState::parse_bid("x23", 100).is_err(), "Should fail");
+    }
+
+    #[test]
+    fn test_check_bid_while_bidding() {
+        let admin = UserId::from(1);
+        let p1 = Player::new(String::from("Stas"), UserId::from(2));
+        let p2 = Player::new(String::from("Sasha"), UserId::from(3));
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1.id(), p1.name().clone());
+        game_state.add_player(p2.id(), p2.name().clone());
+        game_state.start(admin);
+
+        let mut passed = HashSet::new();
+
+        game_state.players.insert(p1.clone(), 100);
+        game_state.players.insert(p2.clone(), 80);
+
+        let state = BiddingState {
+            question : Question::new("?", "!"),
+            passed: passed,
+            bid: 80,
+            current_player: p1.clone()
+        };
+
+        assert!(game_state.check_bid_while_bidding(&p2, 80), "Must be able to beat with all-in");
+        assert!(!game_state.check_bid_while_bidding(&p2, 81), "Can't bid more than have");
+        assert!(!game_state.check_bid_while_bidding(&p2, 79), "Can't bid less than current bid");
+        assert!(game_state.check_bid_while_bidding(&p2, -1), "Must be able to pass");
     }
 
     #[test]
