@@ -11,6 +11,12 @@ use question::Question;
 use questionsstorage::QuestionsStorage;
 use std;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Bid {
+    Bid(u64),
+    Pass
+}
+
 /// The state, when players are bidding for the auction
 /// and winner is no decided yet. In this state players can pass
 ///
@@ -20,7 +26,7 @@ use std;
 struct BiddingState {
     question: Question,
     current_player: Player,
-    bid: u64,
+    bid: Bid,
     passed: HashSet<Player>
 }
 
@@ -30,7 +36,7 @@ struct BiddingState {
 struct FinishingBidState {
     question: Question,
     player: Player,
-    bid: u64
+    bid: Bid
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -298,7 +304,7 @@ impl GameState {
                 Some(player) => {
                     self.players_falsestarted.insert(player.clone());
                     return vec![
-                        UiRequest::SendTextToMainChat(format!("Фальшстарт {}", player.name())),
+                        UiRequest::SendTextToMainChat(format!("Фальстарт {}", player.name())),
                     ];
                 }
                 None => {
@@ -437,29 +443,79 @@ impl GameState {
         }
     }
 
-    fn check_bid_while_bidding(&self, player: &Player, bid: i64) -> Result<bool, String> {
-        Err(String::from("Not implemented yet"))
+    /// Method works in Bidding state and checks that the bid from the given player
+    /// is acceptable
+    ///
+    /// - if all-in was played, the current bid must be all-in
+    /// - if no all-in was played, but the current bid is equal to player's bid, this bid
+    /// is accepted
+    /// - in other cases bid must be bigger, than current bid (which is stored in the state)
+    /// and not bigger, than player's score
+    fn check_bid_while_bidding(&self, player: &Player, bid: Bid) -> Result<bool, String> {
+        if let State::Bidding(ref bidding_state) = self.state {
+            if *player == bidding_state.current_player {
+                return Ok(false);
+            }
+            Err("Not implemented yet!".to_string())
+        } else {
+            Err(format!("Must be in BiddingState to use this method, but actuall in {:?}", &self.state))
+        }
     }
 
-    fn parse_bid(bid: &str, score: i64) -> Result<i64, std::num::ParseIntError> {
+    /// Parse the bid from the message.
+    ///
+    /// This method checks that the bid is positive and is less, than score
+    ///
+    /// There are three possible variants:
+    /// - all-in - the bid is equal to the player's score
+    /// - pass - player passes
+    /// - number - this number is returned
+    fn parse_bid(bid: &str, score: i64) -> Result<Bid, String> {
         let all_in = vec!["ва-банк", "вабанк", "ва банк"];
         let pass = vec!["пас"];
         let bid = bid.to_lowercase();
 
         for opt in all_in.iter() {
             if bid == *opt {
-                return Ok(score);
+                if score < 0 {
+                    return Err("Very smart to go all-in, when you have negative score".to_string());
+                }
+                return Ok(Bid::Bid(score as u64));
             }
         }
         for opt in pass.iter() {
             if bid == *opt {
-                return Ok(-1);
+                return Ok(Bid::Pass);
             }
         }
 
-        bid.parse::<i64>()
+        let bid = bid.parse::<i64>();
+        if bid.is_err() {
+            return Err("Can't parse bid, it's not an integer".to_string());
+        }
+        let bid = bid.unwrap();
+        if bid < 0 {
+            return Err("Bid must be positive".to_string());
+        }
+        if bid > score {
+            return Err("Bid must not be bigger, than score".to_string());
+        }
+        Ok(Bid::Bid(bid as u64))
     }
 
+    /// Return the next player to take a bid in the auction
+    /// All players are sorted by their score, then by the name
+    /// Players are asked in this order, except those who already passed
+    /// or whose score is less than the current bid
+    ///
+    /// Corner case: if the current bid is not 'all-in' bid, but there's a player
+    /// which has the score equal to the bid, (s)he can overtake the bid
+    ///
+    /// Args:
+    ///     current_player - the player which holds the highest bid
+    ///     bid - the highest bid by now
+    ///     scores - how many points each player has
+    ///     passed_player - which players already passed
     fn next_player_to_bid(current_player: &Player, bid: u64, scores: &HashMap<Player, i64>, passed_players: &HashSet<Player>) -> Option<Player> {
         let bid = bid as i64;
         let mut players = Vec::new();
@@ -1366,16 +1422,15 @@ mod test {
 
     #[test]
     fn test_parse_bid() {
-        assert_eq!(GameState::parse_bid("вабанк", 100), Ok(100));
-        assert_eq!(GameState::parse_bid("Вабанк", 100), Ok(100));
-        assert_eq!(GameState::parse_bid("ва-банк", 100), Ok(100));
-        assert_eq!(GameState::parse_bid("Ва-банк", 100), Ok(100));
-        assert_eq!(GameState::parse_bid("пас", 100), Ok(-1));
-        assert_eq!(GameState::parse_bid("Пас", 100), Ok(-1));
-        // This method won't check, that the bid is higher than score
-        assert_eq!(GameState::parse_bid("123", 100), Ok(123));
-        // This method won't check, that the bid is negative
-        assert_eq!(GameState::parse_bid("-50", 100), Ok(-50));
+        assert_eq!(GameState::parse_bid("вабанк", 100), Ok(Bid::Bid(100)));
+        assert_eq!(GameState::parse_bid("Вабанк", 100), Ok(Bid::Bid(100)));
+        assert_eq!(GameState::parse_bid("ва-банк", 100), Ok(Bid::Bid(100)));
+        assert_eq!(GameState::parse_bid("Ва-банк", 100), Ok(Bid::Bid(100)));
+        assert!(GameState::parse_bid("вабанк", -1).is_err());
+        assert_eq!(GameState::parse_bid("пас", 100), Ok(Bid::Pass));
+        assert_eq!(GameState::parse_bid("Пас", 100), Ok(Bid::Pass));
+        assert!(GameState::parse_bid("123", 100).is_err());
+        assert!(GameState::parse_bid("-50", 100).is_err());
         assert!(GameState::parse_bid("М?", 100).is_err(), "Should fail");
         assert!(GameState::parse_bid("x23", 100).is_err(), "Should fail");
     }
@@ -1398,14 +1453,19 @@ mod test {
         let state = BiddingState {
             question : Question::new("?", "!"),
             passed: passed,
-            bid: 80,
+            bid: Bid::Bid(80),
             current_player: p1.clone()
         };
+        game_state.set_state(State::Bidding(state));
 
-        assert!(game_state.check_bid_while_bidding(&p2, 80), "Must be able to beat with all-in");
-        assert!(!game_state.check_bid_while_bidding(&p2, 81), "Can't bid more than have");
-        assert!(!game_state.check_bid_while_bidding(&p2, 79), "Can't bid less than current bid");
-        assert!(game_state.check_bid_while_bidding(&p2, -1), "Must be able to pass");
+        assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(80)).unwrap(), "Must be able to beat with all-in");
+        assert!(!game_state.check_bid_while_bidding(&p2, Bid::Bid(81)).unwrap(), "Can't bid more than have");
+        assert!(!game_state.check_bid_while_bidding(&p2, Bid::Bid(79)).unwrap(), "Can't bid less than current bid");
+        assert!(game_state.check_bid_while_bidding(&p2, Bid::Pass).unwrap(), "Must be able to pass");
+        assert!(game_state.check_bid_while_bidding(&p1, Bid::Bid(81)).is_err(), "Current player must not bid");
+
+        game_state.set_state(State::Pause);
+        assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(81)).is_err(), "Method must work only in bidding state");
     }
 
     #[test]
