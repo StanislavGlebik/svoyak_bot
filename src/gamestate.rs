@@ -446,6 +446,7 @@ impl GameState {
     /// Method works in Bidding state and checks that the bid from the given player
     /// is acceptable
     ///
+    ///
     /// - if all-in was played, the current bid must be all-in
     /// - if no all-in was played, but the current bid is equal to player's bid, this bid
     /// is accepted
@@ -454,11 +455,41 @@ impl GameState {
     fn check_bid_while_bidding(&self, player: &Player, bid: Bid) -> Result<bool, String> {
         if let State::Bidding(ref bidding_state) = self.state {
             if *player == bidding_state.current_player {
-                return Ok(false);
+                return Err("Current player must not take a bid!".to_string());
             }
-            Err("Not implemented yet!".to_string())
+            let was_bid = match bidding_state.bid {
+                Bid::Bid(the_bid) => the_bid as i64,
+                Bid::Pass => {return Err("Current bid can't be pass".to_string());}
+            };
+            let is_score = self.players[player];
+            if is_score < was_bid {
+                return Err(
+                    format!(
+                        "The player {:?} must not take a bid: it has less points ({}) than current bid ({})",
+                        player,
+                        is_score,
+                        was_bid
+                    )
+                );
+            }
+            let was_all_in = self.players[&bidding_state.current_player] == was_bid;
+            match bid {
+                Bid::Pass => {return Ok(true);}
+                Bid::Bid(is_bid) => {
+                    let is_bid = is_bid as i64;
+                    if is_bid < was_bid || is_bid > self.players[player] {
+                        return Ok(false);
+                    }
+                    if !was_all_in && is_bid > was_bid {
+                        return Ok(true);
+                    }
+                    let is_all_in = is_bid == self.players[player];
+                    Ok(is_all_in)
+                }
+            }
+
         } else {
-            Err(format!("Must be in BiddingState to use this method, but actuall in {:?}", &self.state))
+            Err(format!("Must be in BiddingState to use this method, but actually in {:?}", &self.state))
         }
     }
 
@@ -1440,19 +1471,20 @@ mod test {
         let admin = UserId::from(1);
         let p1 = Player::new(String::from("Stas"), UserId::from(2));
         let p2 = Player::new(String::from("Sasha"), UserId::from(3));
+        let p3 = Player::new(String::from("Алексей Владимирович"), UserId::from(4));
         let mut game_state = create_game_state(admin);
         game_state.add_player(p1.id(), p1.name().clone());
         game_state.add_player(p2.id(), p2.name().clone());
+        game_state.add_player(p3.id(), p3.name().clone());
         game_state.start(admin);
-
-        let mut passed = HashSet::new();
 
         game_state.players.insert(p1.clone(), 100);
         game_state.players.insert(p2.clone(), 80);
+        game_state.players.insert(p3.clone(), 10);
 
         let state = BiddingState {
             question : Question::new("?", "!"),
-            passed: passed,
+            passed: HashSet::new(),
             bid: Bid::Bid(80),
             current_player: p1.clone()
         };
@@ -1463,6 +1495,17 @@ mod test {
         assert!(!game_state.check_bid_while_bidding(&p2, Bid::Bid(79)).unwrap(), "Can't bid less than current bid");
         assert!(game_state.check_bid_while_bidding(&p2, Bid::Pass).unwrap(), "Must be able to pass");
         assert!(game_state.check_bid_while_bidding(&p1, Bid::Bid(81)).is_err(), "Current player must not bid");
+        assert!(game_state.check_bid_while_bidding(&p3, Bid::Bid(81)).is_err(), "The player must has more points than current bid");
+
+        let state = BiddingState {
+            question : Question::new("?", "!"),
+            passed: HashSet::new(),
+            bid: Bid::Pass,
+            current_player: p1.clone()
+        };
+        game_state.set_state(State::Bidding(state));
+        assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(80)).is_err(), "Current bid must not be a pass");
+
 
         game_state.set_state(State::Pause);
         assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(81)).is_err(), "Method must work only in bidding state");
