@@ -39,6 +39,14 @@ struct FinishingBidState {
     bid: Bid
 }
 
+/// In this state answer is awaited from player, which won the auction
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AnsweringAuctionQuestionState {
+    question: Question,
+    player: Player,
+    cost: u64
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
     WaitingForPlayersToJoin,
@@ -50,6 +58,7 @@ enum State {
     Answering(Question, i64),
     Bidding(BiddingState),
     FinishingBid(FinishingBidState),
+    AnsweringAuctionQuestion(AnsweringAuctionQuestionState),
     Pause,
 }
 
@@ -217,6 +226,9 @@ impl GameState {
             }
             State::FinishingBid(ref bid_state) => {
                 eprintln!("Auction was won by {:?}, now it's time to finalize the bid", &bid_state.player);
+            }
+            State::AnsweringAuctionQuestion(_) => {
+                eprintln!("Playing the auction question");
             }
         }
     }
@@ -1509,6 +1521,114 @@ mod test {
 
         game_state.set_state(State::Pause);
         assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(81)).is_err(), "Method must work only in bidding state");
+    }
+
+    #[test]
+    fn test_check_bidding_stage() {
+        let admin = UserId::from(1);
+        let p1 = Player::new(String::from("Stas"), UserId::from(2));
+        let p2 = Player::new(String::from("Sasha"), UserId::from(3));
+        let p3 = Player::new(String::from("Masha"), UserId::from(4));
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1.id(), p1.name().clone());
+        game_state.add_player(p2.id(), p2.name().clone());
+        game_state.add_player(p3.id(), p3.name().clone());
+        game_state.start(admin);
+
+        game_state.players.insert(p1.clone(), 1000);
+        game_state.players.insert(p2.clone(), 700);
+        game_state.players.insert(p3.clone(), 10000);
+
+        let mut state = BiddingState {
+            question : Question::new("?", "!"),
+            passed: HashSet::new(),
+            bid: Bid::Bid(400),
+            current_player: p1.clone()
+        };
+        game_state.set_state(State::Bidding(state.clone()));
+
+        let check_state = |game_state : &GameState, state : &BiddingState| {
+            if let &State::Bidding(ref bidding_state) = game_state.get_state() {
+                assert_eq!(*bidding_state, *state);
+            } else {
+                panic!("Game is not in a bidding state");
+            }
+        };
+        check_state(&game_state, &state);
+
+        // Next bidder is Sasha, but other players
+        // think that it would be funny to interfere
+        //
+        // Sasha wants to check score. All these action must
+        // not change current state
+        game_state.message(p1.id(), "Sasha, go-go-go".to_string());
+        check_state(&game_state, &state);
+        game_state.message(p3.id(), "Stas, shush".to_string());
+        check_state(&game_state, &state);
+        game_state.message(p1.id(), "Don't make me shush".to_string());
+        check_state(&game_state, &state);
+        game_state.message(p2.id(), "/score".to_string());
+        check_state(&game_state, &state);
+
+        // Sasha makes a bid of 750, this is not allowed
+        game_state.message(p2.id(), "750".to_string());
+        check_state(&game_state, &state);
+        // She realizes the mistake and goes 650
+        game_state.message(p2.id(), "Ой".to_string());
+        check_state(&game_state, &state);
+        game_state.message(p2.id(), "650".to_string());
+        state.bid = Bid::Bid(650);
+        state.current_player = p2.clone();
+        check_state(&game_state, &state);
+
+        // Next goes Stas and he tries his strategy
+        // First, tries to break the rules
+        game_state.message(p1.id(), "-1".to_string());
+        check_state(&game_state, &state);
+        // Then other way
+        game_state.message(p1.id(), "649".to_string());
+        check_state(&game_state, &state);
+        // Then other way
+        game_state.message(p1.id(), "650".to_string());
+        check_state(&game_state, &state);
+        // Then he goes 651, but tries to fix it, but it's late
+        game_state.message(p1.id(), "651".to_string());
+        state.bid = Bid::Bid(651);
+        state.current_player = p1.clone();
+        check_state(&game_state, &state);
+        game_state.message(p1.id(), "695".to_string());
+        check_state(&game_state, &state);
+
+        // Next goes Masha with 700
+        game_state.message(p3.id(), "700".to_string());
+        state.bid = Bid::Bid(700);
+        state.current_player = p3.clone();
+        check_state(&game_state, &state);
+
+        // Sasha is not afraid
+        game_state.message(p2.id(), "ва банк".to_string());
+        state.bid = Bid::Bid(700);
+        state.current_player = p1.clone();
+        check_state(&game_state, &state);
+
+        // Stas is afraid
+        game_state.message(p1.id(), "Ай ну. Сами играйте своё цветоводство".to_string());
+        check_state(&game_state, &state);
+        game_state.message(p1.id(), "пас".to_string());
+        state.passed.insert(p1.clone());
+        check_state(&game_state, &state);
+        game_state.message(p1.id(), "Довольны?".to_string());
+        check_state(&game_state, &state);
+
+        // Masha also passes and Sasha wins the auction
+        game_state.message(p3.id(), "пас".to_string());
+        if let &State::AnsweringAuctionQuestion(ref the_state) = game_state.get_state() {
+            assert_eq!(the_state.player, p2.clone());
+            assert_eq!(the_state.cost, 700);
+            assert_eq!(the_state.question, state.question);
+        } else {
+            panic!("Must be in the Finishing")
+        }
     }
 
     #[test]
