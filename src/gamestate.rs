@@ -90,6 +90,7 @@ pub enum UiRequest {
 }
 
 pub enum Delay {
+    Tiny,
     Short,
     Medium,
     Long
@@ -307,6 +308,54 @@ impl GameState {
         ]
     }
 
+    /// Compute what next to do in this auction:
+    /// - it can be continued, if there's a player which can make a bid
+    /// - it can be already won by some player, but (s)he can still raise a bid
+    /// - it can be already won by some player and no raise can be done
+    fn compute_next_bidding_state(&mut self, bidding_state: BiddingState) -> Vec<UiRequest> {
+        let mut requests = Vec::new();
+        match GameState::next_player_to_bid(&bidding_state.current_player, bidding_state.bid, &self.players, &bidding_state.passed) {
+            Some(next_player) => {
+                requests.push(UiRequest::SendTextToMainChat(format!("Принимаю ставки. {}, что скажешь? Введи \"ва-банк\" \"пас\" или ставку цифрами", next_player.name())));
+                self.set_state(State::Bidding(bidding_state));
+            }
+            None => {
+                requests.push(UiRequest::SendTextToMainChat(format!("Аукцион выигран игроком {} (ставка {})", bidding_state.current_player.name(), bidding_state.bid)));
+                requests.push(UiRequest::Timeout(None, Delay::Tiny));
+                if (bidding_state.bid as i64) >= self.players[&bidding_state.current_player] {
+                    requests.push(
+                        UiRequest::SendTextToMainChat(
+                            format!("Играем вопрос-аукцион за {}", bidding_state.bid)
+                        )
+                    );
+                    requests.push(UiRequest::SendTextToMainChat(bidding_state.question.question()));
+                    requests.push(UiRequest::AskAdminYesNo("Correct answer?".to_string()));
+                    self.set_state(
+                        State::AnsweringAuctionQuestion(
+                            AnsweringAuctionQuestionState {
+                                question: bidding_state.question,
+                                player: bidding_state.current_player,
+                                cost: bidding_state.bid
+                            }
+                        )
+                    );
+                } else {
+                    requests.push(UiRequest::SendTextToMainChat(format!("{}, не хотите ли повысить ставку? (Введите \"ва-банк\", \"играем\" или ставку цифрами)", bidding_state.current_player.name())));
+                    self.set_state(
+                        State::FinishingBid(
+                            FinishingBidState {
+                                question: bidding_state.question,
+                                player: bidding_state.current_player,
+                                bid: bidding_state.bid
+                            }
+                        )
+                    );
+                }
+            }
+        };
+        requests
+    }
+
     pub fn message(&mut self, user: UserId, _message: String) -> Vec<UiRequest> {
         eprintln!("User {} sent a message '{}'", user, _message);
         let player = self.find_player(user).cloned();
@@ -398,61 +447,24 @@ impl GameState {
                                 UiRequest::SendTextToMainChat(
                                     format!("Смелое решение. {} идёт ва-банк!", player.name())
                                 )
-                            )
+                            );
                         } else {
                             requests.push(
                                 UiRequest::SendTextToMainChat(format!("Ставка {} принята!", the_bid))
                             );
-                            new_state.bid = the_bid;
-                            new_state.current_player = player.clone();
                         }
+                        new_state.bid = the_bid;
+                        new_state.current_player = player.clone();
                     }
                 };
 
-                match GameState::next_player_to_bid(&new_state.current_player, new_state.bid, &self.players, &new_state.passed) {
-                    Some(next_player) => {
-                        requests.push(UiRequest::SendTextToMainChat(format!("Аукцион продолжается. {}, что скажешь? Введи \"ва-банк\" \"пас\" или ставку цифрами", next_player.name())));
-                        self.set_state(State::Bidding(new_state));
-                    }
-                    None => {
-                        requests.push(UiRequest::SendTextToMainChat(format!("Аукцион выигран игроком {} (ставка {})", new_state.current_player.name(), new_state.bid)));
-                        if new_state.bid as i64 == self.players[&new_state.current_player] {
-                            requests.push(
-                                UiRequest::SendTextToMainChat(
-                                    format!("Играем вопрос-аукцион за {}", new_state.bid)
-                                )
-                            );
-                            requests.push(UiRequest::SendTextToMainChat(new_state.question.question()));
-                            requests.push(UiRequest::AskAdminYesNo("Correct answer?".to_string()));
-                            self.set_state(
-                                State::AnsweringAuctionQuestion(
-                                    AnsweringAuctionQuestionState {
-                                        question: new_state.question,
-                                        player: new_state.current_player,
-                                        cost: new_state.bid
-                                    }
-                                )
-                            );
-                        } else {
-                            requests.push(UiRequest::SendTextToMainChat(format!("{}, не хотите ли повысить ставку? (Введите \"ва-банк\", \"играем\" или ставку цифрами)", new_state.current_player.name())));
-                            self.set_state(
-                                State::FinishingBid(
-                                    FinishingBidState {
-                                        question: new_state.question,
-                                        player: new_state.current_player,
-                                        bid: new_state.bid
-                                    }
-                                )
-                            );
-                        }
-                    }
-                };
+                requests.extend(self.compute_next_bidding_state(new_state));
 
                 return requests;
             } else {
                 return vec![
                     UiRequest::SendTextToMainChat("Не могу принять такую ставку.".to_string()),
-                    UiRequest::SendTextToMainChat(format!("{}, Ваша ставка должна быть выше предыдущей {} и не больше вашего счёта {}", player.name(), state.bid, self.players[&player])),
+                    UiRequest::SendTextToMainChat(format!("{}, Ваша ставка должна быть выше предыдущей ({}) и не больше вашего счёта ({})", player.name(), state.bid, self.players[&player])),
                     UiRequest::SendTextToMainChat("Напомню, что ва-банк можно побить только большим ва-банком".to_string())
                 ]
             }
@@ -883,6 +895,24 @@ impl GameState {
                     ]
                 } else {
                     eprintln!("automatic question");
+                    if 1 == 1 {
+                        let state = BiddingState {
+                            question,
+                            current_player: self.current_player.clone().unwrap(),
+                            bid: cost as u64,
+                            passed: HashSet::new()
+                        };
+
+                        let mut requests = Vec::new();
+                        requests.push(UiRequest::SendTextToMainChat(format!("{}, Вам выпал вопрос-аукцион. Ваша текущая ставка -- номинал, {}", state.current_player.name(), state.bid)));
+                        requests.push(UiRequest::Timeout(None, Delay::Tiny));
+
+                        requests.extend(self.compute_next_bidding_state(state));
+
+                        return requests;
+                    }
+
+
                     self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
                     self.player_which_chose_question = self.current_player.clone();
                     let main_chat_message = format!(

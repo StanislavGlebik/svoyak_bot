@@ -358,6 +358,7 @@ fn main() {
                 }
                 gamestate::UiRequest::Timeout(msg, delay) => {
                     let duration = match delay {
+                        gamestate::Delay::Tiny => Duration::new(1, 0),
                         gamestate::Delay::Short => Duration::new(3, 0),
                         gamestate::Delay::Medium => Duration::new(5, 0),
                         gamestate::Delay::Long => Duration::new(10, 0),
