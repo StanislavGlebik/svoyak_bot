@@ -9,7 +9,6 @@ use player::Player;
 use telegram_config::TourDescription;
 use question::Question;
 use questionsstorage::QuestionsStorage;
-use std;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Bid {
@@ -26,7 +25,7 @@ enum Bid {
 struct BiddingState {
     question: Question,
     current_player: Player,
-    bid: Bid,
+    bid: u64,
     passed: HashSet<Player>
 }
 
@@ -36,7 +35,7 @@ struct BiddingState {
 struct FinishingBidState {
     question: Question,
     player: Player,
-    bid: Bid
+    bid: u64
 }
 
 /// In this state answer is awaited from player, which won the auction
@@ -310,49 +309,157 @@ impl GameState {
 
     pub fn message(&mut self, user: UserId, _message: String) -> Vec<UiRequest> {
         eprintln!("User {} sent a message '{}'", user, _message);
+        let player = self.find_player(user).cloned();
+        if let None = player {
+            eprintln!("Got message from id, which is not in the game: {:?}. Skipping", user);
+            return vec![];
+        }
+        let player = player.unwrap();
+
         if let State::Falsestart(_, _) = self.state.clone() {
-            let player = self.find_player(user).cloned();
-            match player {
-                Some(player) => {
-                    self.players_falsestarted.insert(player.clone());
-                    return vec![
-                        UiRequest::SendTextToMainChat(format!("Фальстарт {}", player.name())),
-                    ];
-                }
-                None => {
-                    return vec![];
-                }
-            }
+            self.players_falsestarted.insert(player.clone());
+            return vec![
+                UiRequest::SendTextToMainChat(format!("Фальстарт {}", player.name())),
+            ];
         }
 
         if let State::CanAnswer(question, cost) = self.state.clone() {
-            let player = self.find_player(user).cloned();
-            match player {
-                Some(player) => {
-                    if self.players_answered_current_question.contains(&player) {
-                        eprintln!("Player '{:?}' already answered this question", player);
-                        return vec![];
-                    } else if self.players_falsestarted.contains(&player) {
-                        eprintln!("Player {} falsestarted", player.name());
-                        return vec![];
-                    } else {
-                        eprintln!("{:?}", self.players_answered_current_question);
-                    }
-                    self.current_player = Some(player.clone());
-                    self.players_answered_current_question.insert(player.clone());
-                    self.set_state(State::Answering(question, cost));
-                    vec![
-                        UiRequest::StopTimer,
-                        UiRequest::SendTextToMainChat(format!("Отвечает {}", player.name())),
-                        UiRequest::AskAdminYesNo("Correct answer?".to_string()),
-                    ]
-                }
-                None => vec![],
+            if self.players_answered_current_question.contains(&player) {
+                eprintln!("Player '{:?}' already answered this question", player);
+                return vec![];
+            } else if self.players_falsestarted.contains(&player) {
+                eprintln!("Player {} falsestarted", player.name());
+                return vec![];
+            } else {
+                eprintln!("{:?}", self.players_answered_current_question);
             }
-        } else {
-            println!("bad state");
-            vec![]
+            self.current_player = Some(player.clone());
+            self.players_answered_current_question.insert(player.clone());
+            self.set_state(State::Answering(question, cost));
+            return vec![
+                UiRequest::StopTimer,
+                UiRequest::SendTextToMainChat(format!("Отвечает {}", player.name())),
+                UiRequest::AskAdminYesNo("Correct answer?".to_string()),
+            ];
         }
+
+        if let State::Bidding(state) = self.state.clone() {
+            let player_to_bid = GameState::next_player_to_bid(&state.current_player, state.bid, &self.players, &state.passed);
+            let player_to_bid = player_to_bid.expect("There is no player to make a bid, but I'm in Bidding state");
+
+            if player_to_bid != player {
+                eprintln!(
+                    "Now expecting to take a bid from {:?}, but {:?} sent a message. Skipping",
+                    &player_to_bid,
+                    &player
+                );
+                return vec![];
+            }
+
+            let score = self.players[&player];
+            let bid = GameState::parse_bid(&_message, score);
+            if bid.is_err() {
+                let error_message = format!("Error, while taking a bid from {:?}: {}", &player, bid.err().unwrap());
+                eprintln!("{}", &error_message);
+                return vec![UiRequest::SendToAdmin(format!("Attention: {}", error_message))];
+            }
+
+            let bid = bid.unwrap();
+            let is_good_bid = self.check_bid_while_bidding(&player, &bid);
+            if is_good_bid.is_err() {
+                let error_message = format!(
+                    "Error, while checking that bid \"{:?}\" from {:?} is valid: {}",
+                    _message,
+                    &player,
+                    is_good_bid.err().unwrap()
+                );
+                eprintln!("{}", &error_message);
+                return vec![UiRequest::SendToAdmin(format!("Attention: {}", error_message))];
+            }
+
+            let is_good_bid = is_good_bid.unwrap();
+            if is_good_bid {
+                let mut requests = Vec::new();
+                let mut new_state = BiddingState {
+                    question: state.question.clone(),
+                    current_player: player.clone(),
+                    bid: state.bid,
+                    passed: state.passed.clone()
+                };
+                match bid {
+                    Bid::Pass => {
+                        requests.push(UiRequest::SendTextToMainChat("Настоящие герои..".to_string()));
+                        new_state.passed.insert(player.clone());
+                        new_state.current_player = state.current_player.clone();
+                    }
+                    Bid::Bid(the_bid) => {
+                        if the_bid as i64 == score {
+                            requests.push(
+                                UiRequest::SendTextToMainChat(
+                                    format!("Смелое решение. {} идёт ва-банк!", player.name())
+                                )
+                            )
+                        } else {
+                            requests.push(
+                                UiRequest::SendTextToMainChat(format!("Ставка {} принята!", the_bid))
+                            );
+                            new_state.bid = the_bid;
+                            new_state.current_player = player.clone();
+                        }
+                    }
+                };
+
+                match GameState::next_player_to_bid(&new_state.current_player, new_state.bid, &self.players, &new_state.passed) {
+                    Some(next_player) => {
+                        requests.push(UiRequest::SendTextToMainChat(format!("Аукцион продолжается. {}, что скажешь? Введи \"ва-банк\" \"пас\" или ставку цифрами", next_player.name())));
+                        self.set_state(State::Bidding(new_state));
+                    }
+                    None => {
+                        requests.push(UiRequest::SendTextToMainChat(format!("Аукцион выигран игроком {} (ставка {})", new_state.current_player.name(), new_state.bid)));
+                        if new_state.bid as i64 == self.players[&new_state.current_player] {
+                            requests.push(
+                                UiRequest::SendTextToMainChat(
+                                    format!("Играем вопрос-аукцион за {}", new_state.bid)
+                                )
+                            );
+                            requests.push(UiRequest::SendTextToMainChat(new_state.question.question()));
+                            requests.push(UiRequest::AskAdminYesNo("Correct answer?".to_string()));
+                            self.set_state(
+                                State::AnsweringAuctionQuestion(
+                                    AnsweringAuctionQuestionState {
+                                        question: new_state.question,
+                                        player: new_state.current_player,
+                                        cost: new_state.bid
+                                    }
+                                )
+                            );
+                        } else {
+                            requests.push(UiRequest::SendTextToMainChat(format!("{}, не хотите ли повысить ставку? (Введите \"ва-банк\", \"играем\" или ставку цифрами)", new_state.current_player.name())));
+                            self.set_state(
+                                State::FinishingBid(
+                                    FinishingBidState {
+                                        question: new_state.question,
+                                        player: new_state.current_player,
+                                        bid: new_state.bid
+                                    }
+                                )
+                            );
+                        }
+                    }
+                };
+
+                return requests;
+            } else {
+                return vec![
+                    UiRequest::SendTextToMainChat("Не могу принять такую ставку.".to_string()),
+                    UiRequest::SendTextToMainChat(format!("{}, Ваша ставка должна быть выше предыдущей {} и не больше вашего счёта {}", player.name(), state.bid, self.players[&player])),
+                    UiRequest::SendTextToMainChat("Напомню, что ва-банк можно побить только большим ва-банком".to_string())
+                ]
+            }
+        }
+
+        eprintln!("Got an unexpected message from player {:?}", &player);
+        vec![]
     }
 
     fn make_score_table(&self) -> ScoreTable {
@@ -464,15 +571,12 @@ impl GameState {
     /// is accepted
     /// - in other cases bid must be bigger, than current bid (which is stored in the state)
     /// and not bigger, than player's score
-    fn check_bid_while_bidding(&self, player: &Player, bid: Bid) -> Result<bool, String> {
+    fn check_bid_while_bidding(&self, player: &Player, bid: &Bid) -> Result<bool, String> {
         if let State::Bidding(ref bidding_state) = self.state {
             if *player == bidding_state.current_player {
                 return Err("Current player must not take a bid!".to_string());
             }
-            let was_bid = match bidding_state.bid {
-                Bid::Bid(the_bid) => the_bid as i64,
-                Bid::Pass => {return Err("Current bid can't be pass".to_string());}
-            };
+            let was_bid = bidding_state.bid as i64;
             let is_score = self.players[player];
             if is_score < was_bid {
                 return Err(
@@ -485,7 +589,7 @@ impl GameState {
                 );
             }
             let was_all_in = self.players[&bidding_state.current_player] == was_bid;
-            match bid {
+            match *bid {
                 Bid::Pass => {return Ok(true);}
                 Bid::Bid(is_bid) => {
                     let is_bid = is_bid as i64;
@@ -1497,34 +1601,25 @@ mod test {
         let state = BiddingState {
             question : Question::new("?", "!"),
             passed: HashSet::new(),
-            bid: Bid::Bid(80),
+            bid: 80,
             current_player: p1.clone()
         };
         game_state.set_state(State::Bidding(state));
 
-        assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(80)).unwrap(), "Must be able to beat with all-in");
-        assert!(!game_state.check_bid_while_bidding(&p2, Bid::Bid(81)).unwrap(), "Can't bid more than have");
-        assert!(!game_state.check_bid_while_bidding(&p2, Bid::Bid(79)).unwrap(), "Can't bid less than current bid");
-        assert!(game_state.check_bid_while_bidding(&p2, Bid::Pass).unwrap(), "Must be able to pass");
-        assert!(game_state.check_bid_while_bidding(&p1, Bid::Bid(81)).is_err(), "Current player must not bid");
-        assert!(game_state.check_bid_while_bidding(&p3, Bid::Bid(81)).is_err(), "The player must has more points than current bid");
-
-        let state = BiddingState {
-            question : Question::new("?", "!"),
-            passed: HashSet::new(),
-            bid: Bid::Pass,
-            current_player: p1.clone()
-        };
-        game_state.set_state(State::Bidding(state));
-        assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(80)).is_err(), "Current bid must not be a pass");
+        assert!(game_state.check_bid_while_bidding(&p2, &Bid::Bid(80)).unwrap(), "Must be able to beat with all-in");
+        assert!(!game_state.check_bid_while_bidding(&p2, &Bid::Bid(81)).unwrap(), "Can't bid more than have");
+        assert!(!game_state.check_bid_while_bidding(&p2, &Bid::Bid(79)).unwrap(), "Can't bid less than current bid");
+        assert!(game_state.check_bid_while_bidding(&p2, &Bid::Pass).unwrap(), "Must be able to pass");
+        assert!(game_state.check_bid_while_bidding(&p1, &Bid::Bid(81)).is_err(), "Current player must not bid");
+        assert!(game_state.check_bid_while_bidding(&p3, &Bid::Bid(81)).is_err(), "The player must has more points than current bid");
 
 
         game_state.set_state(State::Pause);
-        assert!(game_state.check_bid_while_bidding(&p2, Bid::Bid(81)).is_err(), "Method must work only in bidding state");
+        assert!(game_state.check_bid_while_bidding(&p2, &Bid::Bid(81)).is_err(), "Method must work only in bidding state");
     }
 
     #[test]
-    fn test_check_bidding_stage() {
+    fn test_bidding_stage_all_passed() {
         let admin = UserId::from(1);
         let p1 = Player::new(String::from("Stas"), UserId::from(2));
         let p2 = Player::new(String::from("Sasha"), UserId::from(3));
@@ -1542,7 +1637,7 @@ mod test {
         let mut state = BiddingState {
             question : Question::new("?", "!"),
             passed: HashSet::new(),
-            bid: Bid::Bid(400),
+            bid: 400,
             current_player: p1.clone()
         };
         game_state.set_state(State::Bidding(state.clone()));
@@ -1556,28 +1651,85 @@ mod test {
         };
         check_state(&game_state, &state);
 
-        // Next bidder is Sasha, but other players
+        // Masha makes a bid of 75000, this is not allowed
+        game_state.message(p3.id(), "75000".to_string());
+        check_state(&game_state, &state);
+        // She realizes the mistake and passes
+        game_state.message(p3.id(), "пас".to_string());
+        state.passed.insert(p3.clone());
+        check_state(&game_state, &state);
+        // Sasha also passes, so Stas plays the game
+        game_state.message(p2.id(), "пас".to_string());
+        if let &State::FinishingBid(ref the_state) = game_state.get_state() {
+            assert_eq!(the_state.player, p1.clone());
+            assert_eq!(the_state.bid, 400);
+            assert_eq!(the_state.question, state.question);
+        } else {
+            panic!("Must be in the FinishingBid state");
+        }
+    }
+
+    #[test]
+    fn test_bidding_stage_all_in() {
+        let admin = UserId::from(1);
+        let p1 = Player::new(String::from("Stas"), UserId::from(2));
+        let p2 = Player::new(String::from("Sasha"), UserId::from(3));
+        let p3 = Player::new(String::from("Masha"), UserId::from(4));
+        let mut game_state = create_game_state(admin);
+        game_state.add_player(p1.id(), p1.name().clone());
+        game_state.add_player(p2.id(), p2.name().clone());
+        game_state.add_player(p3.id(), p3.name().clone());
+        game_state.start(admin);
+
+        game_state.players.insert(p1.clone(), 1000);
+        game_state.players.insert(p2.clone(), 700);
+        game_state.players.insert(p3.clone(), 10000);
+
+        let mut state = BiddingState {
+            question : Question::new("?", "!"),
+            passed: HashSet::new(),
+            bid: 400,
+            current_player: p1.clone()
+        };
+        game_state.set_state(State::Bidding(state.clone()));
+
+        let check_state = |game_state : &GameState, state : &BiddingState| {
+            if let &State::Bidding(ref bidding_state) = game_state.get_state() {
+                assert_eq!(*bidding_state, *state);
+            } else {
+                panic!("Game is not in a bidding state");
+            }
+        };
+        check_state(&game_state, &state);
+
+        // Next bidder is Masha, but other players
         // think that it would be funny to interfere
         //
-        // Sasha wants to check score. All these action must
+        // Masha wants to check score. All these action must
         // not change current state
-        game_state.message(p1.id(), "Sasha, go-go-go".to_string());
+        game_state.message(p1.id(), "Masha, go-go-go".to_string());
         check_state(&game_state, &state);
-        game_state.message(p3.id(), "Stas, shush".to_string());
+        game_state.message(p2.id(), "Stas, shush".to_string());
         check_state(&game_state, &state);
         game_state.message(p1.id(), "Don't make me shush".to_string());
         check_state(&game_state, &state);
-        game_state.message(p2.id(), "/score".to_string());
+        game_state.message(p3.id(), "/score".to_string());
         check_state(&game_state, &state);
 
-        // Sasha makes a bid of 750, this is not allowed
-        game_state.message(p2.id(), "750".to_string());
+        // Masha makes a bid of 75000, this is not allowed
+        game_state.message(p3.id(), "75000".to_string());
         check_state(&game_state, &state);
         // She realizes the mistake and goes 650
-        game_state.message(p2.id(), "Ой".to_string());
+        game_state.message(p3.id(), "Ой".to_string());
         check_state(&game_state, &state);
-        game_state.message(p2.id(), "650".to_string());
-        state.bid = Bid::Bid(650);
+        game_state.message(p3.id(), "650".to_string());
+        state.bid = 650;
+        state.current_player = p3.clone();
+        check_state(&game_state, &state);
+
+        // Sasha goes 651
+        game_state.message(p2.id(), "651".to_string());
+        state.bid = 651;
         state.current_player = p2.clone();
         check_state(&game_state, &state);
 
@@ -1586,14 +1738,14 @@ mod test {
         game_state.message(p1.id(), "-1".to_string());
         check_state(&game_state, &state);
         // Then other way
-        game_state.message(p1.id(), "649".to_string());
-        check_state(&game_state, &state);
-        // Then other way
         game_state.message(p1.id(), "650".to_string());
         check_state(&game_state, &state);
-        // Then he goes 651, but tries to fix it, but it's late
+        // Then other way
         game_state.message(p1.id(), "651".to_string());
-        state.bid = Bid::Bid(651);
+        check_state(&game_state, &state);
+        // Then he goes 651, but tries to fix it, but it's late
+        game_state.message(p1.id(), "652".to_string());
+        state.bid = 652;
         state.current_player = p1.clone();
         check_state(&game_state, &state);
         game_state.message(p1.id(), "695".to_string());
@@ -1601,14 +1753,14 @@ mod test {
 
         // Next goes Masha with 700
         game_state.message(p3.id(), "700".to_string());
-        state.bid = Bid::Bid(700);
+        state.bid = 700;
         state.current_player = p3.clone();
         check_state(&game_state, &state);
 
         // Sasha is not afraid
         game_state.message(p2.id(), "ва банк".to_string());
-        state.bid = Bid::Bid(700);
-        state.current_player = p1.clone();
+        state.bid = 700;
+        state.current_player = p2.clone();
         check_state(&game_state, &state);
 
         // Stas is afraid
@@ -1627,7 +1779,7 @@ mod test {
             assert_eq!(the_state.cost, 700);
             assert_eq!(the_state.question, state.question);
         } else {
-            panic!("Must be in the Finishing")
+            panic!("Must be in the AnsweringAuctionQuestion state");
         }
     }
 
