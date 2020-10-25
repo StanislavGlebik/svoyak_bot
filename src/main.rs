@@ -291,8 +291,7 @@ fn main() -> Result<(), Error> {
         config.questions_per_topic,
         config.tours.clone(),
         config.manual_questions.clone(),
-    )
-    .expect("failed to create gamestate");
+    )?;
 
     let fut = async move {
         let mut s = requests_stream.compat();
