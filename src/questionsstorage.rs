@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 
-use question::Question;
+use crate::question::Question;
 
 pub trait QuestionsStorage {
     fn get(&self, topic_name: String, difficulty: usize) -> Option<Question>;

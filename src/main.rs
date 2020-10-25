@@ -1,17 +1,3 @@
-extern crate csv;
-extern crate failure;
-extern crate futures;
-extern crate futures_03;
-#[macro_use]
-extern crate telegram_bot;
-#[macro_use]
-extern crate serde_derive;
-extern crate futures_cpupool;
-extern crate serde;
-extern crate serde_json;
-extern crate tokio as tokio_01;
-extern crate tokio_compat;
-
 use std::env;
 
 use failure::{err_msg, Error};
@@ -22,6 +8,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process::Command;
 use std::time::{Duration, Instant};
+use telegram_bot::reply_markup;
+use tokio as tokio_01;
 use tokio_compat::runtime::Runtime;
 
 use telegram_bot::{Api, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, MessageKind};
@@ -291,10 +279,9 @@ fn main() -> Result<(), Error> {
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
 
     eprintln!("Game is ready to start!");
-    let question_storage: Box<dyn QuestionsStorage> = Box::new(
-        CsvQuestionsStorage::new(config.questions_storage_path.clone())
-            .expect("cannot open questions storage"),
-    );
+    let question_storage: Box<dyn QuestionsStorage> = Box::new(CsvQuestionsStorage::new(
+        config.questions_storage_path.clone(),
+    )?);
     let mut gamestate = gamestate::GameState::new(
         config.admin_user,
         question_storage,

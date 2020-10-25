@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use serde_derive::Serialize;
 use telegram_bot::UserId;
 
 use failure::{err_msg, Error};
-use messages::*;
-use player::Player;
-use question::Question;
-use questionsstorage::QuestionsStorage;
-use telegram_config::TourDescription;
+
+use crate::messages::*;
+use crate::player::Player;
+use crate::question::Question;
+use crate::questionsstorage::QuestionsStorage;
+use crate::telegram_config::TourDescription;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {

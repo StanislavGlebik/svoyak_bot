@@ -1,6 +1,4 @@
-extern crate serde;
-extern crate serde_json;
-
+use serde_derive::{Deserialize, Serialize};
 use std::fs::File;
 use telegram_bot;
 
