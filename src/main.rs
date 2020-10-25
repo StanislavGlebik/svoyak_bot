@@ -1,6 +1,7 @@
 extern crate csv;
 extern crate failure;
 extern crate futures;
+extern crate futures_03;
 #[macro_use]
 extern crate telegram_bot;
 #[macro_use]
@@ -8,19 +9,20 @@ extern crate serde_derive;
 extern crate futures_cpupool;
 extern crate serde;
 extern crate serde_json;
-extern crate tokio_core;
+extern crate tokio as tokio_01;
+extern crate tokio_compat;
 
 use std::env;
 
 use failure::{err_msg, Error};
 use futures::sync::mpsc;
 use futures::{Future, IntoFuture, Sink, Stream};
-use futures_cpupool::CpuPool;
+use futures_03::{FutureExt, TryFutureExt, TryStreamExt};
 use std::fs::File;
 use std::io::prelude::*;
 use std::process::Command;
-use std::time::Duration;
-use tokio_core::reactor::{Core, Timeout};
+use std::time::{Duration, Instant};
+use tokio_compat::runtime::Runtime;
 
 use telegram_bot::{Api, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, MessageKind};
 use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream};
@@ -109,17 +111,14 @@ fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result
 }
 
 fn send_score_table(
-    pool: &CpuPool,
     table: gamestate::ScoreTable,
     game_chat: ChatId,
     token: String,
-) -> Box<dyn Future<Item = (), Error = Error>> {
-    Box::new(pool.spawn_fn(move || {
-        dump_score_table_file(table, SCORE_TABLE_JSON_FILE)?;
-        make_score_table_image(SCORE_TABLE_JSON_FILE, SCORE_TABLE_PNG_FILE)?;
-        send_photo_via_curl(game_chat, &token, SCORE_TABLE_PNG_FILE)?;
-        Ok(())
-    }))
+) -> Result<(), Error> {
+    dump_score_table_file(table, SCORE_TABLE_JSON_FILE)?;
+    make_score_table_image(SCORE_TABLE_JSON_FILE, SCORE_TABLE_PNG_FILE)?;
+    send_photo_via_curl(game_chat, &token, SCORE_TABLE_PNG_FILE)?;
+    Ok(())
 }
 
 fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
@@ -152,6 +151,7 @@ fn merge_updates_and_timeouts(
 ) -> Box<dyn Stream<Item = Result<Update, ()>, Error = Error>> {
     let updates_stream = Box::new(
         updates_stream
+            .compat()
             .map(|update| Ok(update))
             .map_err(|err| err_msg(format!("{}", err))),
     );
@@ -227,7 +227,13 @@ fn parse_text_message(data: &String) -> TextMessage {
     return TextMessage::JustMessage(data.clone());
 }
 
-fn parse_callback(data: &String) -> CallbackMessage {
+fn parse_callback(data: &Option<String>) -> CallbackMessage {
+    let data = match data {
+        Some(data) => data,
+        None => {
+            return CallbackMessage::Unknown;
+        }
+    };
     if data.starts_with("/question") {
         let data = data.trim_start_matches("/question");
         let split: Vec<_> = data.rsplitn(2, '_').collect();
@@ -271,19 +277,15 @@ where
     }))
 }
 
-fn main() {
-    let mut core = Core::new().unwrap();
-
+fn main() -> Result<(), Error> {
+    let mut runtime = Runtime::new()?;
     let token = env::var(TOKEN_VAR).unwrap();
     let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok(), token);
-    let api = Api::configure(&config.token).build(core.handle()).unwrap();
-
-    let thread_pool = CpuPool::new(2);
+    let api = Api::new(&config.token);
 
     // Fetch new updates via long poll method
     let (sender, receiver) = mpsc::channel::<Option<Box<dyn Future<Item = (), Error = Error>>>>(1);
 
-    let handle = core.handle();
     let timeout_stream = timeout_stream::TimeoutStream::new(receiver);
     let updates_stream = api.stream();
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
@@ -360,7 +362,7 @@ fn main() {
             let fut = match r {
                 gamestate::UiRequest::SendTextToMainChat(msg) => {
                     let msg = SendMessage::new(config.game_chat, msg);
-                    convert_future(api.send(msg))
+                    convert_future(api.send(msg).boxed().compat())
                 }
                 gamestate::UiRequest::Timeout(msg, delay) => {
                     let duration = match delay {
@@ -368,13 +370,17 @@ fn main() {
                         gamestate::Delay::Medium => Duration::new(5, 0),
                         gamestate::Delay::Long => Duration::new(10, 0),
                     };
-                    let timer = Timeout::new(duration, &handle).expect("cannot create timer");
+
+                    let when = Instant::now() + duration;
+                    let timer = tokio_01::timer::Delay::new(when);
                     let timer = timer.map_err(|_err| err_msg("timer error happened"));
                     let timer_and_msg = match msg {
                         Some(msg) => {
                             let msg = SendMessage::new(config.game_chat, msg);
                             let sendfut = api
                                 .send(msg)
+                                .boxed()
+                                .compat()
                                 .map_err(|err| {
                                     let msg = format!("send msg after timeout failed {:?}", err);
                                     err_msg(msg)
@@ -399,14 +405,14 @@ fn main() {
                     );
                     let inline_keyboard = topics_inline_keyboard(topics);
                     msg.reply_markup(inline_keyboard);
-                    let fut = api.send(msg);
+                    let fut = api.send(msg).boxed().compat();
                     convert_future(fut)
                 }
                 gamestate::UiRequest::ChooseQuestion(topic, costs) => {
                     let mut msg = SendMessage::new(config.game_chat, "Выберите цену".to_string());
                     let inline_keyboard = questioncosts_inline_keyboard(topic, costs);
                     msg.reply_markup(inline_keyboard);
-                    let fut = api.send(msg);
+                    let fut = api.send(msg).boxed().compat();
                     convert_future(fut)
                 }
                 gamestate::UiRequest::AskAdminYesNo(question) => {
@@ -414,12 +420,12 @@ fn main() {
                         ["Yes" callback ANSWER_YES, "No" callback ANSWER_NO]
                     );
                     let mut msg = SendMessage::new(config.admin_chat, question);
-                    let msg = msg.reply_markup(inline_keyboard);
-                    convert_future(api.send(msg))
+                    msg.reply_markup(inline_keyboard);
+                    convert_future(api.send(msg).boxed().compat())
                 }
                 gamestate::UiRequest::SendToAdmin(msg) => {
                     let msg = SendMessage::new(config.admin_chat, msg);
-                    convert_future(api.send(msg))
+                    convert_future(api.send(msg).boxed().compat())
                 }
                 gamestate::UiRequest::StopTimer => convert_future(sender.clone().send(None)),
                 gamestate::UiRequest::SendScoreTable(score_table) => {
@@ -427,24 +433,20 @@ fn main() {
                         config.game_chat,
                         String::from("```\n") + &score_table.to_string() + "```",
                     );
-                    let msg = msg.parse_mode(telegram_bot::ParseMode::Markdown);
-                    let text_fallback: Box<dyn Future<Item = (), Error = Error>> =
-                        convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
-                    convert_future(
-                        send_score_table(
-                            &thread_pool,
-                            score_table,
-                            config.game_chat,
-                            config.token.clone(),
-                        )
-                        .then(|future| match future {
-                            Ok(_) => Box::new(futures::done(Ok(()))),
-                            Err(errmsg) => {
-                                eprintln!("Couldn't send score table image: '{:?}'", errmsg);
-                                text_fallback
-                            }
-                        }),
-                    )
+                    msg.parse_mode(telegram_bot::ParseMode::Markdown);
+                    let text_fallback: Box<dyn Future<Item = (), Error = Error>> = convert_future(
+                        api.send(msg)
+                            .boxed()
+                            .compat()
+                            .map_err(|_| err_msg("send failed")),
+                    );
+                    match send_score_table(score_table, config.game_chat, config.token.clone()) {
+                        Ok(_) => Box::new(futures::done(Ok(()))),
+                        Err(errmsg) => {
+                            eprintln!("Couldn't send score table image: '{:?}'", errmsg);
+                            text_fallback
+                        }
+                    }
                 }
             };
             res_future = convert_future(res_future.and_then(|_| fut));
@@ -452,5 +454,7 @@ fn main() {
 
         res_future
     });
-    core.run(fut).expect("unexpected error");
+    runtime.block_on(fut)?;
+
+    Ok(())
 }

@@ -763,7 +763,7 @@ mod test {
     }
 
     fn create_game_state(user: UserId) -> GameState {
-        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![
             TourDescription {
                 multiplier: 100,
@@ -888,7 +888,7 @@ mod test {
     #[test]
     fn test_game_state_creation() {
         let admin = UserId::from(1);
-        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![TourDescription {
             multiplier: 100,
             topics: vec![Topic {
@@ -900,7 +900,7 @@ mod test {
         assert!(GameState::new(admin, questions_storage, 0, tours.clone(), vec![],).is_err());
 
         // Non existing topic
-        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         assert!(GameState::new(admin, questions_storage, 5, tours, vec![],).is_err());
 
         // Incorrect question number
@@ -911,7 +911,7 @@ mod test {
             }],
         }];
 
-        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         assert!(GameState::new(admin, questions_storage, 6, tours, vec![],).is_err());
     }
 
@@ -1166,7 +1166,7 @@ mod test {
 
     #[test]
     fn test_manual_questions() {
-        let questions_storage: Box<QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![TourDescription {
             multiplier: 100,
             topics: vec![Topic {
