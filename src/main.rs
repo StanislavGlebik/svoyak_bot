@@ -5,34 +5,33 @@ extern crate futures;
 extern crate telegram_bot;
 #[macro_use]
 extern crate serde_derive;
+extern crate futures_cpupool;
 extern crate serde;
 extern crate serde_json;
 extern crate tokio_core;
-extern crate futures_cpupool;
 
 use std::env;
 
 use failure::{err_msg, Error};
-use futures::{Future, IntoFuture, Sink, Stream};
 use futures::sync::mpsc;
+use futures::{Future, IntoFuture, Sink, Stream};
 use futures_cpupool::CpuPool;
-use tokio_core::reactor::{Core, Timeout};
 use std::fs::File;
 use std::io::prelude::*;
-use std::time::Duration;
 use std::process::Command;
+use std::time::Duration;
+use tokio_core::reactor::{Core, Timeout};
 
-use telegram_bot::{Api, InlineKeyboardMarkup, InlineKeyboardButton, MessageKind, ChatId};
+use telegram_bot::{Api, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, MessageKind};
 use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream};
-
 
 mod gamestate;
 mod messages;
 mod player;
-mod timeout_stream;
 mod question;
-mod telegram_config;
 mod questionsstorage;
+mod telegram_config;
+mod timeout_stream;
 
 use messages::*;
 use questionsstorage::{CsvQuestionsStorage, QuestionsStorage};
@@ -47,18 +46,24 @@ const SCORE_TABLE_JSON_FILE: &str = "score_table.json";
 const SCORE_TABLE_PNG_FILE: &str = "score_table.png";
 
 fn dump_score_table_file(table: gamestate::ScoreTable, filename: &str) -> Result<(), Error> {
-    let mut file = File::create(filename)
-        .map_err(|error| {
-            err_msg(format!("Can't create file to dump score table ({:?})", error))
-        })?;
-    let data = serde_json::to_string(&table)
-        .map_err(|error| {
-            err_msg(format!("Failed while serializing score table ({:?})", error))
-        })?;
-    file.write_all(data.as_bytes())
-        .map_err(|error| {
-            err_msg(format!("Can't write to file while dumping score table ({:?})", error))
-        })
+    let mut file = File::create(filename).map_err(|error| {
+        err_msg(format!(
+            "Can't create file to dump score table ({:?})",
+            error
+        ))
+    })?;
+    let data = serde_json::to_string(&table).map_err(|error| {
+        err_msg(format!(
+            "Failed while serializing score table ({:?})",
+            error
+        ))
+    })?;
+    file.write_all(data.as_bytes()).map_err(|error| {
+        err_msg(format!(
+            "Can't write to file while dumping score table ({:?})",
+            error
+        ))
+    })
 }
 
 fn make_score_table_image(table_filename: &str, image_filename: &str) -> Result<(), Error> {
@@ -66,13 +71,17 @@ fn make_score_table_image(table_filename: &str, image_filename: &str) -> Result<
         .arg("external/draw_table.py")
         .arg(table_filename)
         .arg(image_filename)
-        .status().map_err(
-            |error| {
-                err_msg(format!("Can't execute process to draw score table ({:?})", error))
-            }
-        )?;
+        .status()
+        .map_err(|error| {
+            err_msg(format!(
+                "Can't execute process to draw score table ({:?})",
+                error
+            ))
+        })?;
     if !status.success() {
-        Err(err_msg("Process drawing score table finished unsucessfully"))
+        Err(err_msg(
+            "Process drawing score table finished unsucessfully",
+        ))
     } else {
         Ok(())
     }
@@ -80,14 +89,18 @@ fn make_score_table_image(table_filename: &str, image_filename: &str) -> Result<
 
 fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result<(), Error> {
     let status = Command::new("curl")
-        .arg("-F").arg(format!("chat_id={}", game_chat))
-        .arg("-F").arg(format!("photo=@{}", filename))
+        .arg("-F")
+        .arg(format!("chat_id={}", game_chat))
+        .arg("-F")
+        .arg(format!("photo=@{}", filename))
         .arg(format!("https://api.telegram.org/bot{}/sendPhoto", token))
-        .status().map_err(
-            |error| {
-                err_msg(format!("Can't execute curl to send score table ({:?})", error))
-            }
-        )?;
+        .status()
+        .map_err(|error| {
+            err_msg(format!(
+                "Can't execute curl to send score table ({:?})",
+                error
+            ))
+        })?;
     if !status.success() {
         Err(err_msg("Curl sending score table finished unsucessfully"))
     } else {
@@ -95,17 +108,18 @@ fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result
     }
 }
 
-fn send_score_table(pool: &CpuPool, table: gamestate::ScoreTable, game_chat: ChatId, token: String) -> Box<dyn Future<Item = (), Error = Error>> {
-    Box::new(
-        pool.spawn_fn(
-            move || {
-                dump_score_table_file(table, SCORE_TABLE_JSON_FILE)?;
-                make_score_table_image(SCORE_TABLE_JSON_FILE, SCORE_TABLE_PNG_FILE)?;
-                send_photo_via_curl(game_chat, &token, SCORE_TABLE_PNG_FILE)?;
-                Ok(())
-            }
-        )
-    )
+fn send_score_table(
+    pool: &CpuPool,
+    table: gamestate::ScoreTable,
+    game_chat: ChatId,
+    token: String,
+) -> Box<dyn Future<Item = (), Error = Error>> {
+    Box::new(pool.spawn_fn(move || {
+        dump_score_table_file(table, SCORE_TABLE_JSON_FILE)?;
+        make_score_table_image(SCORE_TABLE_JSON_FILE, SCORE_TABLE_PNG_FILE)?;
+        send_photo_via_curl(game_chat, &token, SCORE_TABLE_PNG_FILE)?;
+        Ok(())
+    }))
 }
 
 fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
@@ -136,13 +150,17 @@ fn merge_updates_and_timeouts(
     updates_stream: UpdatesStream,
     timeouts: timeout_stream::TimeoutStream,
 ) -> Box<dyn Stream<Item = Result<Update, ()>, Error = Error>> {
-    let updates_stream = Box::new(updates_stream.map(|update| Ok(update)).map_err(|err| {
-        err_msg(format!("{}", err))
-    }));
+    let updates_stream = Box::new(
+        updates_stream
+            .map(|update| Ok(update))
+            .map_err(|err| err_msg(format!("{}", err))),
+    );
 
-    let timeouts = Box::new(timeouts.map(|timeout| Err(timeout)).map_err(|err| {
-        err_msg(format!("{}", err))
-    }));
+    let timeouts = Box::new(
+        timeouts
+            .map(|timeout| Err(timeout))
+            .map_err(|err| err_msg(format!("{}", err))),
+    );
     Box::new(updates_stream.select(timeouts))
 }
 
@@ -242,7 +260,6 @@ fn parse_callback(data: &String) -> CallbackMessage {
     CallbackMessage::Unknown
 }
 
-
 fn convert_future<I, E, F>(future: F) -> Box<dyn Future<Item = (), Error = Error>>
 where
     F: Future<Item = I, Error = E> + 'static,
@@ -273,7 +290,8 @@ fn main() {
 
     eprintln!("Game is ready to start!");
     let question_storage: Box<dyn QuestionsStorage> = Box::new(
-        CsvQuestionsStorage::new(config.questions_storage_path.clone()).expect("cannot open questions storage")
+        CsvQuestionsStorage::new(config.questions_storage_path.clone())
+            .expect("cannot open questions storage"),
     );
     let mut gamestate = gamestate::GameState::new(
         config.admin_user,
@@ -281,7 +299,8 @@ fn main() {
         config.questions_per_topic,
         config.tours.clone(),
         config.manual_questions.clone(),
-    ).expect("failed to create gamestate");
+    )
+    .expect("failed to create gamestate");
 
     let fut = requests_stream.for_each(move |request| {
         let res = match request {
@@ -299,18 +318,12 @@ fn main() {
                                 TextMessage::NextQuestion => {
                                     gamestate.next_question(message.from.id)
                                 }
-                                TextMessage::StartGame => {
-                                    gamestate.start(message.from.id)
-                                }
-                                TextMessage::GetScore => {
-                                    gamestate.get_score(message.from.id)
-                                }
+                                TextMessage::StartGame => gamestate.start(message.from.id),
+                                TextMessage::GetScore => gamestate.get_score(message.from.id),
                                 TextMessage::CurrentPlayer => {
                                     gamestate.current_player(message.from.id)
                                 }
-                                TextMessage::NextTour => {
-                                    gamestate.next_tour(message.from.id)
-                                }
+                                TextMessage::NextTour => gamestate.next_tour(message.from.id),
                                 TextMessage::UpdateScore(name, newscore) => {
                                     gamestate.update_score(name, newscore, message.from.id)
                                 }
@@ -329,27 +342,20 @@ fn main() {
                             CallbackMessage::SelectedQuestion(topic, cost) => {
                                 gamestate.select_question(topic, cost, callback.from.id)
                             }
-                            CallbackMessage::AnswerYes => {
-                                gamestate.yes_reply(callback.from.id)
-                            }
-                            CallbackMessage::AnswerNo => {
-                                gamestate.no_reply(callback.from.id)
-                            }
-                            CallbackMessage::Unknown => {
-                                vec![]
-                            }
+                            CallbackMessage::AnswerYes => gamestate.yes_reply(callback.from.id),
+                            CallbackMessage::AnswerNo => gamestate.no_reply(callback.from.id),
+                            CallbackMessage::Unknown => vec![],
                         }
                     }
                     _ => vec![],
                 }
             }
-            Err(_timeout) => {
-                gamestate.timeout()
-            },
+            Err(_timeout) => gamestate.timeout(),
         };
 
         let res_future: Result<_, Error> = Ok(());
-        let mut res_future: Box<dyn Future<Item=(), Error=Error>> = Box::new(res_future.into_future());
+        let mut res_future: Box<dyn Future<Item = (), Error = Error>> =
+            Box::new(res_future.into_future());
         for r in res {
             let fut = match r {
                 gamestate::UiRequest::SendTextToMainChat(msg) => {
@@ -367,15 +373,15 @@ fn main() {
                     let timer_and_msg = match msg {
                         Some(msg) => {
                             let msg = SendMessage::new(config.game_chat, msg);
-                            let sendfut = api.send(msg).map_err(
-                                |err| {
+                            let sendfut = api
+                                .send(msg)
+                                .map_err(|err| {
                                     let msg = format!("send msg after timeout failed {:?}", err);
                                     err_msg(msg)
-                                }
-                            ).map(|_| ());
-                            let res: Box<dyn Future<Item = (), Error = Error>> = Box::new(
-                                timer.and_then(|_| sendfut)
-                            );
+                                })
+                                .map(|_| ());
+                            let res: Box<dyn Future<Item = (), Error = Error>> =
+                                Box::new(timer.and_then(|_| sendfut));
                             res
                         }
                         None => {
@@ -389,7 +395,7 @@ fn main() {
                 gamestate::UiRequest::ChooseTopic(current_player_name, topics) => {
                     let mut msg = SendMessage::new(
                         config.game_chat,
-                        format!("{}, выберите тему", current_player_name)
+                        format!("{}, выберите тему", current_player_name),
                     );
                     let inline_keyboard = topics_inline_keyboard(topics);
                     msg.reply_markup(inline_keyboard);
@@ -397,10 +403,7 @@ fn main() {
                     convert_future(fut)
                 }
                 gamestate::UiRequest::ChooseQuestion(topic, costs) => {
-                    let mut msg = SendMessage::new(
-                        config.game_chat,
-                        "Выберите цену".to_string(),
-                    );
+                    let mut msg = SendMessage::new(config.game_chat, "Выберите цену".to_string());
                     let inline_keyboard = questioncosts_inline_keyboard(topic, costs);
                     msg.reply_markup(inline_keyboard);
                     let fut = api.send(msg);
@@ -418,25 +421,29 @@ fn main() {
                     let msg = SendMessage::new(config.admin_chat, msg);
                     convert_future(api.send(msg))
                 }
-                gamestate::UiRequest::StopTimer => {
-                    convert_future(sender.clone().send(None))
-                }
+                gamestate::UiRequest::StopTimer => convert_future(sender.clone().send(None)),
                 gamestate::UiRequest::SendScoreTable(score_table) => {
-                    let mut msg = SendMessage::new(config.game_chat, String::from("```\n") + &score_table.to_string() + "```");
+                    let mut msg = SendMessage::new(
+                        config.game_chat,
+                        String::from("```\n") + &score_table.to_string() + "```",
+                    );
                     let msg = msg.parse_mode(telegram_bot::ParseMode::Markdown);
-                    let text_fallback : Box<dyn Future<Item = (), Error = Error>> = convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
+                    let text_fallback: Box<dyn Future<Item = (), Error = Error>> =
+                        convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
                     convert_future(
-                        send_score_table(&thread_pool, score_table, config.game_chat, config.token.clone()).then(
-                            |future| {
-                                match future {
-                                    Ok(_) => Box::new(futures::done(Ok(()))),
-                                    Err(errmsg) => {
-                                        eprintln!("Couldn't send score table image: '{:?}'", errmsg);
-                                        text_fallback
-                                    }
-                                }
-                            }
+                        send_score_table(
+                            &thread_pool,
+                            score_table,
+                            config.game_chat,
+                            config.token.clone(),
                         )
+                        .then(|future| match future {
+                            Ok(_) => Box::new(futures::done(Ok(()))),
+                            Err(errmsg) => {
+                                eprintln!("Couldn't send score table image: '{:?}'", errmsg);
+                                text_fallback
+                            }
+                        }),
                     )
                 }
             };

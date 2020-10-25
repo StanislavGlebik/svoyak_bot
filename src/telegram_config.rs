@@ -32,10 +32,10 @@ struct RawConfig {
 }
 
 pub struct Config {
-    pub token : String,
-    pub admin_user : telegram_bot::UserId,
-    pub admin_chat : telegram_bot::ChatId,
-    pub game_chat : telegram_bot::ChatId,
+    pub token: String,
+    pub admin_user: telegram_bot::UserId,
+    pub admin_chat: telegram_bot::ChatId,
+    pub game_chat: telegram_bot::ChatId,
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
     pub tours: Vec<TourDescription>,
@@ -50,12 +50,14 @@ impl RawConfig {
         match filename {
             Some(ref fname) => {
                 eprintln!("Loading configuration from '{}'", fname);
-                let file = File::open(fname).unwrap_or_else(
-                    |_| panic!("Can't open file '{}' with configuration", fname)
-                );
-                let config: Self = serde_json::from_reader(file).unwrap_or_else(
-                    |_| panic!("Content of '{}' is not a valid InstanceConfig object", fname)
-                );
+                let file = File::open(fname)
+                    .unwrap_or_else(|_| panic!("Can't open file '{}' with configuration", fname));
+                let config: Self = serde_json::from_reader(file).unwrap_or_else(|_| {
+                    panic!(
+                        "Content of '{}' is not a valid InstanceConfig object",
+                        fname
+                    )
+                });
                 config
             }
             None => {
@@ -86,8 +88,12 @@ impl Config {
             questions_storage_path: config.questions_storage_path,
             questions_per_topic: config.questions_per_topic,
             tours: config.tours,
-            manual_questions: config.manual_questions
-                .unwrap_or(vec![]).into_iter().map(|question| (question.topic, question.cost)).collect(),
+            manual_questions: config
+                .manual_questions
+                .unwrap_or(vec![])
+                .into_iter()
+                .map(|question| (question.topic, question.cost))
+                .collect(),
         }
     }
 }

@@ -1,6 +1,5 @@
-
 use csv;
-use failure::{Error, err_msg};
+use failure::{err_msg, Error};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
@@ -11,11 +10,10 @@ pub trait QuestionsStorage {
     fn get(&self, topic_name: String, difficulty: usize) -> Option<Question>;
 }
 
-
 // Questions for the same topic have to go one after another
 // Row: question,answer,optional comment,topic
 pub struct CsvQuestionsStorage {
-    questions: HashMap<(String, usize), Question>
+    questions: HashMap<(String, usize), Question>,
 }
 
 impl CsvQuestionsStorage {
