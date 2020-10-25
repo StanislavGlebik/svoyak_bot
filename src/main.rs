@@ -257,17 +257,6 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
     CallbackMessage::Unknown
 }
 
-fn convert_future<I, E, F>(future: F) -> Box<dyn Future<Item = (), Error = Error>>
-where
-    F: Future<Item = I, Error = E> + 'static,
-    E: std::fmt::Display,
-{
-    Box::new(future.map(|_| ()).map_err(|err| {
-        let msg = format!("error happened: {}", err);
-        err_msg(msg)
-    }))
-}
-
 fn main() -> Result<(), Error> {
     let mut runtime = Runtime::new()?;
     let token = env::var(TOKEN_VAR).unwrap();
@@ -347,10 +336,10 @@ fn main() -> Result<(), Error> {
             };
 
             for r in res {
-                let fut = match r {
+                match r {
                     gamestate::UiRequest::SendTextToMainChat(msg) => {
                         let msg = SendMessage::new(config.game_chat, msg);
-                        convert_future(api.send(msg).boxed().compat())
+                        api.send(msg).await?;
                     }
                     gamestate::UiRequest::Timeout(msg, delay) => {
                         let duration = match delay {
@@ -375,18 +364,19 @@ fn main() -> Result<(), Error> {
                                         err_msg(msg)
                                     })
                                     .map(|_| ());
-                                let res: Box<dyn Future<Item = (), Error = Error>> =
+                                let res: Box<dyn Future<Item = (), Error = Error> + Send> =
                                     Box::new(timer.and_then(|_| sendfut));
                                 res
                             }
                             None => {
-                                let res: Box<dyn Future<Item = (), Error = Error>> =
+                                let res: Box<dyn Future<Item = (), Error = Error> + Send> =
                                     Box::new(timer);
                                 res
                             }
                         };
 
-                        convert_future(sender.clone().send(Some(timer_and_msg)))
+                        // TODO(stash): handle?
+                        let _ = sender.clone().send(Some(timer_and_msg)).compat().map_err(|_|()).await;
                     }
                     gamestate::UiRequest::ChooseTopic(current_player_name, topics) => {
                         let mut msg = SendMessage::new(
@@ -395,16 +385,14 @@ fn main() -> Result<(), Error> {
                         );
                         let inline_keyboard = topics_inline_keyboard(topics);
                         msg.reply_markup(inline_keyboard);
-                        let fut = api.send(msg).boxed().compat();
-                        convert_future(fut)
+                        api.send(msg).await?;
                     }
                     gamestate::UiRequest::ChooseQuestion(topic, costs) => {
                         let mut msg =
                             SendMessage::new(config.game_chat, "Выберите цену".to_string());
                         let inline_keyboard = questioncosts_inline_keyboard(topic, costs);
                         msg.reply_markup(inline_keyboard);
-                        let fut = api.send(msg).boxed().compat();
-                        convert_future(fut)
+                        api.send(msg).await?;
                     }
                     gamestate::UiRequest::AskAdminYesNo(question) => {
                         let inline_keyboard = reply_markup!(inline_keyboard,
@@ -412,37 +400,36 @@ fn main() -> Result<(), Error> {
                         );
                         let mut msg = SendMessage::new(config.admin_chat, question);
                         msg.reply_markup(inline_keyboard);
-                        convert_future(api.send(msg).boxed().compat())
+                        api.send(msg).await?;
                     }
                     gamestate::UiRequest::SendToAdmin(msg) => {
                         let msg = SendMessage::new(config.admin_chat, msg);
-                        convert_future(api.send(msg).boxed().compat())
+                        api.send(msg).await?;
                     }
-                    gamestate::UiRequest::StopTimer => convert_future(sender.clone().send(None)),
+                    gamestate::UiRequest::StopTimer => {
+                        // TODO(stash): handle?
+                        let _ = sender.clone().send(None).compat().map_err(|_| ()).await;
+                    },
                     gamestate::UiRequest::SendScoreTable(score_table) => {
-                        let mut msg = SendMessage::new(
-                            config.game_chat,
-                            String::from("```\n") + &score_table.to_string() + "```",
-                        );
-                        msg.parse_mode(telegram_bot::ParseMode::Markdown);
-                        let text_fallback: Box<dyn Future<Item = (), Error = Error>> =
-                            convert_future(
-                                api.send(msg)
-                                    .boxed()
-                                    .compat()
-                                    .map_err(|_| err_msg("send failed")),
-                            );
-                        match send_score_table(score_table, config.game_chat, config.token.clone())
+                        let score_table_str = score_table.to_string();
+                        let res = match send_score_table(score_table, config.game_chat, config.token.clone())
                         {
-                            Ok(_) => Box::new(futures::done(Ok(()))),
+                            Ok(_) => (),
                             Err(errmsg) => {
                                 eprintln!("Couldn't send score table image: '{:?}'", errmsg);
-                                text_fallback
+
+                                let mut msg = SendMessage::new(
+                                    config.game_chat,
+                                    String::from("```\n") + &score_table_str + "```",
+                                );
+                                msg.parse_mode(telegram_bot::ParseMode::Markdown);
+                                api.send(msg).await?;
                             }
-                        }
+                        };
+
+                        res
                     }
-                };
-                fut.compat().await?;
+                }
             }
         }
         Result::<_, Error>::Ok(())
