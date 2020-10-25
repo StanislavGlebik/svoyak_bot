@@ -2,15 +2,15 @@
 name = "svoyak_bot"
 version = "0.1.0"
 authors = ["stash"]
+edition = '2015'
 
 [dependencies]
 csv = "*"
 failure = "*"
-futures = "*"
+futures = "0.1.*"
 futures-cpupool = "*"
-telegram-bot = "*"
+telegram-bot = "0.6.0"
 tokio-core = "*"
 serde_json = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
-

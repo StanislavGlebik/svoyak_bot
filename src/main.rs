@@ -95,7 +95,7 @@ fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result
     }
 }
 
-fn send_score_table(pool: &CpuPool, table: gamestate::ScoreTable, game_chat: ChatId, token: String) -> Box<Future<Item = (), Error = Error>> {
+fn send_score_table(pool: &CpuPool, table: gamestate::ScoreTable, game_chat: ChatId, token: String) -> Box<dyn Future<Item = (), Error = Error>> {
     Box::new(
         pool.spawn_fn(
             move || {
@@ -135,7 +135,7 @@ fn questioncosts_inline_keyboard(topic: String, costs: Vec<usize>) -> InlineKeyb
 fn merge_updates_and_timeouts(
     updates_stream: UpdatesStream,
     timeouts: timeout_stream::TimeoutStream,
-) -> Box<Stream<Item = Result<Update, ()>, Error = Error>> {
+) -> Box<dyn Stream<Item = Result<Update, ()>, Error = Error>> {
     let updates_stream = Box::new(updates_stream.map(|update| Ok(update)).map_err(|err| {
         err_msg(format!("{}", err))
     }));
@@ -190,7 +190,7 @@ fn parse_text_message(data: &String) -> TextMessage {
     }
 
     if data.starts_with("/updatescore ") {
-        let data = data.trim_left_matches("/updatescore ");
+        let data = data.trim_start_matches("/updatescore ");
         let split: Vec<_> = data.rsplitn(2, ' ').collect();
         if split.len() == 2 {
             let name = split.get(1).unwrap();
@@ -211,7 +211,7 @@ fn parse_text_message(data: &String) -> TextMessage {
 
 fn parse_callback(data: &String) -> CallbackMessage {
     if data.starts_with("/question") {
-        let data = data.trim_left_matches("/question");
+        let data = data.trim_start_matches("/question");
         let split: Vec<_> = data.rsplitn(2, '_').collect();
         if split.len() == 2 {
             let cost = split.get(0).expect("should not happen");
@@ -227,7 +227,7 @@ fn parse_callback(data: &String) -> CallbackMessage {
     }
 
     if data.starts_with("/topic") {
-        let data = data.trim_left_matches("/topic");
+        let data = data.trim_start_matches("/topic");
         return CallbackMessage::SelectedTopic(data.into());
     }
 
@@ -243,7 +243,7 @@ fn parse_callback(data: &String) -> CallbackMessage {
 }
 
 
-fn convert_future<I, E, F>(future: F) -> Box<Future<Item = (), Error = Error>>
+fn convert_future<I, E, F>(future: F) -> Box<dyn Future<Item = (), Error = Error>>
 where
     F: Future<Item = I, Error = E> + 'static,
     E: std::fmt::Display,
@@ -264,7 +264,7 @@ fn main() {
     let thread_pool = CpuPool::new(2);
 
     // Fetch new updates via long poll method
-    let (sender, receiver) = mpsc::channel::<Option<Box<Future<Item = (), Error = Error>>>>(1);
+    let (sender, receiver) = mpsc::channel::<Option<Box<dyn Future<Item = (), Error = Error>>>>(1);
 
     let handle = core.handle();
     let timeout_stream = timeout_stream::TimeoutStream::new(receiver);
@@ -272,7 +272,7 @@ fn main() {
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
 
     eprintln!("Game is ready to start!");
-    let question_storage: Box<QuestionsStorage> = Box::new(
+    let question_storage: Box<dyn QuestionsStorage> = Box::new(
         CsvQuestionsStorage::new(config.questions_storage_path.clone()).expect("cannot open questions storage")
     );
     let mut gamestate = gamestate::GameState::new(
@@ -349,7 +349,7 @@ fn main() {
         };
 
         let res_future: Result<_, Error> = Ok(());
-        let mut res_future: Box<Future<Item=(), Error=Error>> = Box::new(res_future.into_future());
+        let mut res_future: Box<dyn Future<Item=(), Error=Error>> = Box::new(res_future.into_future());
         for r in res {
             let fut = match r {
                 gamestate::UiRequest::SendTextToMainChat(msg) => {
@@ -373,13 +373,13 @@ fn main() {
                                     err_msg(msg)
                                 }
                             ).map(|_| ());
-                            let res: Box<Future<Item = (), Error = Error>> = Box::new(
+                            let res: Box<dyn Future<Item = (), Error = Error>> = Box::new(
                                 timer.and_then(|_| sendfut)
                             );
                             res
                         }
                         None => {
-                            let res: Box<Future<Item = (), Error = Error>> = Box::new(timer);
+                            let res: Box<dyn Future<Item = (), Error = Error>> = Box::new(timer);
                             res
                         }
                     };
@@ -424,7 +424,7 @@ fn main() {
                 gamestate::UiRequest::SendScoreTable(score_table) => {
                     let mut msg = SendMessage::new(config.game_chat, String::from("```\n") + &score_table.to_string() + "```");
                     let msg = msg.parse_mode(telegram_bot::ParseMode::Markdown);
-                    let text_fallback : Box<Future<Item = (), Error = Error>> = convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
+                    let text_fallback : Box<dyn Future<Item = (), Error = Error>> = convert_future(api.send(msg).map_err(|_| err_msg("send failed")));
                     convert_future(
                         send_score_table(&thread_pool, score_table, config.game_chat, config.token.clone()).then(
                             |future| {

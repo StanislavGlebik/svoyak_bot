@@ -37,7 +37,7 @@ impl CsvQuestionsStorage {
             let question = record.get(0).unwrap();
             let answer = record.get(1).unwrap();
             // TODO(stash): ignore comments for now
-            let topic = record.get(3).unwrap().clone();
+            let topic = record.get(3).unwrap().clone().to_string();
             if current_topic != Some(topic.clone()) {
                 current_topic = Some(topic.clone());
                 current_difficulty = 1;

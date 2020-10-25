@@ -6,12 +6,12 @@ use futures::{Async, Future, Poll, Stream};
 use futures::sync::mpsc::Receiver;
 
 pub struct TimeoutStream {
-    new_timers_stream: Receiver<Option<Box<Future<Item = (), Error = Error>>>>,
-    inflight_timer: Option<Box<Future<Item = (), Error = Error>>>,
+    new_timers_stream: Receiver<Option<Box<dyn Future<Item = (), Error = Error>>>>,
+    inflight_timer: Option<Box<dyn Future<Item = (), Error = Error>>>,
 }
 
 impl TimeoutStream {
-    pub fn new(new_timers_stream: Receiver<Option<Box<Future<Item = (), Error = Error>>>>) -> Self {
+    pub fn new(new_timers_stream: Receiver<Option<Box<dyn Future<Item = (), Error = Error>>>>) -> Self {
         Self {
             new_timers_stream,
             inflight_timer: None,
@@ -36,10 +36,10 @@ impl Stream for TimeoutStream {
                                 let msg = format!("timer failed: {}", err);
                                 err_msg(msg)
                             }));
-                            mem::replace(&mut self.inflight_timer, Some(fut));
+                            let _ = mem::replace(&mut self.inflight_timer, Some(fut));
                         }
                         None => {
-                            mem::replace(&mut self.inflight_timer, None);
+                            let _ = mem::replace(&mut self.inflight_timer, None);
                         }
                     }
                 }
@@ -64,7 +64,7 @@ impl Stream for TimeoutStream {
             }
         };
 
-        mem::replace(&mut self.inflight_timer, None);
+        let _ = mem::replace(&mut self.inflight_timer, None);
         Ok(res)
     }
 }

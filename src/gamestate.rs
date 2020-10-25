@@ -29,7 +29,7 @@ pub struct GameState {
     current_player: Option<Player>,
     player_which_chose_question: Option<Player>,
     questions: HashMap<String, Vec<usize>>,
-    questions_storage: Box<QuestionsStorage>,
+    questions_storage: Box<dyn QuestionsStorage>,
     players_falsestarted: HashSet<Player>,
     players_answered_current_question: HashSet<Player>,
     questions_per_topic: usize,
@@ -114,7 +114,7 @@ impl ScoreTable {
 impl GameState {
     pub fn new(
             admin_user: UserId,
-            questions_storage: Box<QuestionsStorage>,
+            questions_storage: Box<dyn QuestionsStorage>,
             questions_per_topic: usize,
             tours: Vec<TourDescription>,
             manual_questions: Vec<(String, usize)>,
@@ -989,7 +989,7 @@ mod test {
         game_state.start(admin);
         game_state.next_tour(admin);
         game_state.next_question(admin);
- 
+
         select_question(&mut game_state, "Movies", p1, 200);
         game_state.message(p1, String::from("1"));
         game_state.yes_reply(admin);
@@ -1243,7 +1243,7 @@ mod test {
         game_state.set_current_player(p1_id).unwrap();
         game_state.select_topic("Sport", p1_id);
         game_state.select_question("Sport", 100, p1_id);
-        
+
         match game_state.get_state() {
             &State::Pause => {}
             _ => {
