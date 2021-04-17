@@ -31,7 +31,6 @@ pub struct GameState {
     current_player: Option<Player>,
     player_which_chose_question: Option<Player>,
     questions: HashMap<String, Vec<usize>>,
-    questions_storage: Box<dyn QuestionsStorage>,
     players_falsestarted: HashSet<Player>,
     players_answered_current_question: HashSet<Player>,
     questions_per_topic: usize,
@@ -116,7 +115,7 @@ impl ScoreTable {
 impl GameState {
     pub fn new(
         admin_user: UserId,
-        questions_storage: Box<dyn QuestionsStorage>,
+        questions_storage: &Box<dyn QuestionsStorage>,
         questions_per_topic: usize,
         tours: Vec<TourDescription>,
         manual_questions: Vec<(String, usize)>,
@@ -146,7 +145,6 @@ impl GameState {
             player_which_chose_question: None,
             current_player: None,
             questions: HashMap::new(),
-            questions_storage,
             players_falsestarted: HashSet::new(),
             players_answered_current_question: HashSet::new(),
             questions_per_topic,
@@ -534,6 +532,7 @@ impl GameState {
         topic: T,
         cost: usize,
         user: UserId,
+        questions_storage: &Box<dyn QuestionsStorage>,
     ) -> Vec<UiRequest> {
         if self.state != State::WaitingForQuestion {
             println!("unexpected question selection");
@@ -568,8 +567,7 @@ impl GameState {
             }
         }
 
-        match self
-            .questions_storage
+        match questions_storage
             .get(topic.clone(), cost / self.current_multiplier)
         {
             Some(question) => {

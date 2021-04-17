@@ -276,7 +276,7 @@ fn main() -> Result<(), Error> {
     )?);
     let mut gamestate = gamestate::GameState::new(
         config.admin_user,
-        question_storage,
+        &question_storage,
         config.questions_per_topic,
         config.tours.clone(),
         config.manual_questions.clone(),
@@ -322,7 +322,7 @@ fn main() -> Result<(), Error> {
                                     gamestate.select_topic(topic, callback.from.id)
                                 }
                                 CallbackMessage::SelectedQuestion(topic, cost) => {
-                                    gamestate.select_question(topic, cost, callback.from.id)
+                                    gamestate.select_question(topic, cost, callback.from.id, &question_storage)
                                 }
                                 CallbackMessage::AnswerYes => gamestate.yes_reply(callback.from.id),
                                 CallbackMessage::AnswerNo => gamestate.no_reply(callback.from.id),
