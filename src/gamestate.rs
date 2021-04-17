@@ -744,8 +744,8 @@ impl GameState {
 #[cfg(test)]
 mod test {
     use super::*;
-    use questionsstorage::QuestionsStorage;
-    use telegram_config::Topic;
+    use crate::questionsstorage::QuestionsStorage;
+    use crate::telegram_config::Topic;
 
     pub struct FakeQuestionsStorage {
         questions: HashMap<(String, usize), Question>,
@@ -754,22 +754,22 @@ mod test {
     impl FakeQuestionsStorage {
         pub fn new() -> Self {
             let mut question_storage = HashMap::new();
-            question_storage.insert((String::from("Sport"), 1), Question::new("2 * 2 = ?", "4"));
-            question_storage.insert((String::from("Sport"), 2), Question::new("3 * 2 = ?", "6"));
-            question_storage.insert((String::from("Sport"), 3), Question::new("4 * 2 = ?", "8"));
-            question_storage.insert((String::from("Sport"), 4), Question::new("5 * 2 = ?", "10"));
-            question_storage.insert((String::from("Sport"), 5), Question::new("6 * 2 = ?", "12"));
+            question_storage.insert((String::from("Sport"), 1), Question::new("2 * 2 = ?", "4", None));
+            question_storage.insert((String::from("Sport"), 2), Question::new("3 * 2 = ?", "6", None));
+            question_storage.insert((String::from("Sport"), 3), Question::new("4 * 2 = ?", "8", None));
+            question_storage.insert((String::from("Sport"), 4), Question::new("5 * 2 = ?", "10", None));
+            question_storage.insert((String::from("Sport"), 5), Question::new("6 * 2 = ?", "12", None));
 
-            question_storage.insert((String::from("Movies"), 1), Question::new("2 * 2 = ?", "4"));
-            question_storage.insert((String::from("Movies"), 2), Question::new("3 * 2 = ?", "6"));
-            question_storage.insert((String::from("Movies"), 3), Question::new("4 * 2 = ?", "8"));
+            question_storage.insert((String::from("Movies"), 1), Question::new("2 * 2 = ?", "4", None));
+            question_storage.insert((String::from("Movies"), 2), Question::new("3 * 2 = ?", "6", None));
+            question_storage.insert((String::from("Movies"), 3), Question::new("4 * 2 = ?", "8", None));
             question_storage.insert(
                 (String::from("Movies"), 4),
-                Question::new("5 * 2 = ?", "10"),
+                Question::new("5 * 2 = ?", "10", None),
             );
             question_storage.insert(
                 (String::from("Movies"), 5),
-                Question::new("6 * 2 = ?", "12"),
+                Question::new("6 * 2 = ?", "12", None),
             );
 
             Self {
