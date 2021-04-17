@@ -366,11 +366,23 @@ impl GameState {
             Some(ref player) => player.name(),
             None => panic!("Trying to process question, but no current player set"),
         };
-        let msg = format!(
-            "Правильный ответ: {}\nСледующий вопрос выбирает {}",
-            question.answer(),
-            current_player_name
-        );
+        let msg = match question.comments() {
+            Some(comments) => {
+                format!(
+                    "Правильный ответ: {}\nКомментарий:{}\nСледующий вопрос выбирает {}",
+                    question.answer(),
+                    comments,
+                    current_player_name
+                )
+            }
+            None => {
+                format!(
+                    "Правильный ответ: {}\nСледующий вопрос выбирает {}",
+                    question.answer(),
+                    current_player_name
+                )
+            }
+        };
 
         if let Some(reason_message) = reason {
             vec![
@@ -407,9 +419,17 @@ impl GameState {
             println!("non-admin yes reply");
             return vec![];
         }
-        if let State::Answering(_, cost) = self.state {
-            match self.update_current_player_score(cost) {
-                Ok(_) => self.close_answered_question(Some(String::from(CORRECT_ANSWER))),
+        if let State::Answering(question, cost) = &self.state {
+            let message = match question.comments() {
+                Some(comments) => {
+                    format!("{}\nКомментарий: {}", CORRECT_ANSWER, comments)
+                }
+                None => {
+                    String::from(CORRECT_ANSWER)
+                }
+            };
+            match self.update_current_player_score(*cost) {
+                Ok(_) => self.close_answered_question(Some(message)),
                 Err(err_msg) => {
                     println!("{}", err_msg);
                     vec![]

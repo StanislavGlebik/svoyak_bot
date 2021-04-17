@@ -34,7 +34,12 @@ impl CsvQuestionsStorage {
             }
             let question = record.get(0).unwrap();
             let answer = record.get(1).unwrap();
-            // TODO(stash): ignore comments for now
+            let comment = record.get(2).unwrap();
+            let comment = if comment == "" {
+                None
+            } else {
+                Some(comment)
+            };
             let topic = record.get(3).unwrap().clone().to_string();
             if current_topic != Some(topic.clone()) {
                 current_topic = Some(topic.clone());
@@ -42,7 +47,7 @@ impl CsvQuestionsStorage {
             } else {
                 current_difficulty += 1;
             }
-            let question = Question::new(question, answer);
+            let question = Question::new(question, answer, comment);
             questions_storage.insert((topic, current_difficulty), question);
         }
 
