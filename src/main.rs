@@ -263,6 +263,30 @@ fn main() -> Result<(), Error> {
     let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok(), token);
     let api = Api::new(&config.token);
 
+    let game_chat = match config.game_chat {
+        Some(game_chat) => {
+            game_chat
+        }
+        None => {
+            eprintln!("waiting to select a game chat");
+            let mut s = api.stream();
+            runtime.block_on_std(
+                async {
+                    while let Some(telegram_update) = s.try_next().await? {
+                        if let UpdateKind::Message(message) = telegram_update.kind {
+                            if let MessageKind::Text { ref data, .. } = message.kind {
+                                if data == "/thischat" && message.from.id == config.admin_user {
+                                    return Ok(message.chat.id());
+                                }
+                            }
+                        }
+                    }
+                    Err(err_msg("unexpected exit"))
+                }
+            )?
+        }
+    };
+
     // Fetch new updates via long poll method
     let (sender, receiver) = mpsc::channel::<Option<Box<dyn Future<Item = (), Error = Error>>>>(1);
 
@@ -338,7 +362,7 @@ fn main() -> Result<(), Error> {
             for r in res {
                 match r {
                     gamestate::UiRequest::SendTextToMainChat(msg) => {
-                        let msg = SendMessage::new(config.game_chat, msg);
+                        let msg = SendMessage::new(game_chat, msg);
                         api.send(msg).await?;
                     }
                     gamestate::UiRequest::Timeout(msg, delay) => {
@@ -353,7 +377,7 @@ fn main() -> Result<(), Error> {
                         let timer = timer.map_err(|_err| err_msg("timer error happened"));
                         let timer_and_msg = match msg {
                             Some(msg) => {
-                                let msg = SendMessage::new(config.game_chat, msg);
+                                let msg = SendMessage::new(game_chat, msg);
                                 let sendfut = api
                                     .send(msg)
                                     .boxed()
@@ -380,7 +404,7 @@ fn main() -> Result<(), Error> {
                     }
                     gamestate::UiRequest::ChooseTopic(current_player_name, topics) => {
                         let mut msg = SendMessage::new(
-                            config.game_chat,
+                            game_chat,
                             format!("{}, выберите тему", current_player_name),
                         );
                         let inline_keyboard = topics_inline_keyboard(topics);
@@ -389,7 +413,7 @@ fn main() -> Result<(), Error> {
                     }
                     gamestate::UiRequest::ChooseQuestion(topic, costs) => {
                         let mut msg =
-                            SendMessage::new(config.game_chat, "Выберите цену".to_string());
+                            SendMessage::new(game_chat, "Выберите цену".to_string());
                         let inline_keyboard = questioncosts_inline_keyboard(topic, costs);
                         msg.reply_markup(inline_keyboard);
                         api.send(msg).await?;
@@ -412,14 +436,14 @@ fn main() -> Result<(), Error> {
                     },
                     gamestate::UiRequest::SendScoreTable(score_table) => {
                         let score_table_str = score_table.to_string();
-                        let res = match send_score_table(score_table, config.game_chat, config.token.clone())
+                        let res = match send_score_table(score_table, game_chat, config.token.clone())
                         {
                             Ok(_) => (),
                             Err(errmsg) => {
                                 eprintln!("Couldn't send score table image: '{:?}'", errmsg);
 
                                 let mut msg = SendMessage::new(
-                                    config.game_chat,
+                                    game_chat,
                                     String::from("```\n") + &score_table_str + "```",
                                 );
                                 msg.parse_mode(telegram_bot::ParseMode::Markdown);
