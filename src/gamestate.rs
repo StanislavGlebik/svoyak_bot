@@ -42,6 +42,7 @@ pub struct GameState {
 
 pub enum UiRequest {
     SendTextToMainChat(String),
+    SendHtmlToMainChat(String),
     Timeout(Option<String>, Delay),
     ChooseTopic(String, Vec<String>),
     ChooseQuestion(String, Vec<usize>),
@@ -240,7 +241,7 @@ impl GameState {
             }
 
             vec![
-                UiRequest::SendTextToMainChat(topics),
+                UiRequest::SendHtmlToMainChat(topics),
                 UiRequest::SendTextToMainChat(format!(
                     "Игру начинает {}",
                     self.current_player.clone().unwrap().name()
