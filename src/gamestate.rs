@@ -230,10 +230,22 @@ impl GameState {
             self.current_tour = 0;
             self.reload_available_questions();
             self.set_state(State::Pause);
-            vec![UiRequest::SendTextToMainChat(format!(
-                "Игру начинает {}",
-                self.current_player.clone().unwrap().name()
-            ))]
+
+            let mut topics = String::from("Вот темы сегодняшней игры, они как всегда прекрасны:\n");
+            for (id, tour) in self.tours.iter().enumerate() {
+                topics += &format!("<b>Тур {}</b>\n", id + 1);
+                for topic in &tour.topics {
+                    topics += &format!("{}\n", topic.name);
+                }
+            }
+
+            vec![
+                UiRequest::SendTextToMainChat(topics),
+                UiRequest::SendTextToMainChat(format!(
+                    "Игру начинает {}",
+                    self.current_player.clone().unwrap().name()
+                ))
+            ]
         }
     }
 
