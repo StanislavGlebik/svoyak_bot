@@ -19,6 +19,16 @@ pub struct Question {
     cost: usize,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CatInBag {
+    old_topic: String,
+    cost: usize,
+    new_topic: String,
+    question: String,
+    answer: String,
+    comments: String,
+}
+
 #[derive(Serialize, Deserialize)]
 struct RawConfig {
     pub admin_id: i64,
@@ -27,6 +37,7 @@ struct RawConfig {
     pub questions_per_topic: usize,
     pub tours: Vec<TourDescription>,
     pub manual_questions: Option<Vec<Question>>,
+    pub cats_in_bags: Option<Vec<CatInBag>>,
 }
 
 pub struct Config {
@@ -66,6 +77,7 @@ impl RawConfig {
                     questions_per_topic: 5,
                     tours: vec![],
                     manual_questions: None,
+                    cats_in_bags: None,
                 }
             }
         }
