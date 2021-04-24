@@ -136,6 +136,16 @@ fn questioncosts_inline_keyboard(topic: String, costs: Vec<usize>) -> InlineKeyb
     inline_markup
 }
 
+fn cat_in_bag_player_inline_keyboard(players: Vec<player::Player>) -> InlineKeyboardMarkup {
+    let mut inline_markup = InlineKeyboardMarkup::new();
+    for player in players {
+        let data = format!("/cat_in_bag_choose_player_{}", player.id());
+        let row = inline_markup.add_empty_row();
+        row.push(InlineKeyboardButton::callback(player.name().to_string(), data))
+    }
+    inline_markup
+}
+
 fn merge_updates_and_timeouts(
     updates_stream: UpdatesStream,
     timeouts: timeout_stream::TimeoutStream,
@@ -458,6 +468,12 @@ fn main() -> Result<(), Error> {
                         };
 
                         res
+                    }
+                    gamestate::UiRequest::CatInBagChoosePlayer(players) => {
+                        let inline_keyboard = cat_in_bag_player_inline_keyboard(players);
+                        let mut msg = SendMessage::new(game_chat, "Кто играет?".to_string());
+                        msg.reply_markup(inline_keyboard);
+                        api.send(msg).await?;
                     }
                 }
             }

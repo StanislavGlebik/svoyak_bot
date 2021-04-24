@@ -54,6 +54,7 @@ pub enum UiRequest {
     SendToAdmin(String),
     SendScoreTable(ScoreTable),
     StopTimer,
+    CatInBagChoosePlayer(Vec<Player>),
 }
 
 pub enum Delay {
@@ -598,7 +599,14 @@ impl GameState {
                     question.question(),
                     question.answer(),
                 )),
-                UiRequest::SendTextToMainChat("Кот в мешке! Кто играет?".to_string()),
+                UiRequest::SendTextToMainChat("Кот в мешке!".into()),
+                UiRequest::CatInBagChoosePlayer(
+                    self.players
+                        .keys()
+                        .map(|player| player.clone())
+                        .filter(|player| Some(player) != self.current_player.as_ref())
+                        .collect::<Vec<_>>()
+                ),
             ];
         }
 
