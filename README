@@ -1,0 +1,3 @@
+Set env vars
+$Env:TELEGRAM_BOT_TOKEN = "GET_TOKEN_FROM_BOT_FATHER"
+$Env:GAME_CONFIG = ".\configs\stash_debug.json"
