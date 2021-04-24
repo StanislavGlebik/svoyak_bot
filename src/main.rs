@@ -304,6 +304,7 @@ fn main() -> Result<(), Error> {
         config.questions_per_topic,
         config.tours.clone(),
         config.manual_questions.clone(),
+        config.cats_in_bags.clone(),
     )?;
 
     let fut = async move {

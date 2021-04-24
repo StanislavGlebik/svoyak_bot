@@ -10,7 +10,7 @@ use crate::messages::*;
 use crate::player::Player;
 use crate::question::Question;
 use crate::questionsstorage::QuestionsStorage;
-use crate::telegram_config::TourDescription;
+use crate::telegram_config::{CatInBag, TourDescription};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
@@ -21,6 +21,9 @@ enum State {
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
     Answering(Question, i64),
+
+    CatInBagChoosingPlayer(String, Question),
+
     Pause,
 }
 
@@ -38,6 +41,7 @@ pub struct GameState {
     current_tour: usize,
     current_multiplier: usize,
     manual_questions: Vec<(String, usize)>,
+    cats_in_bags: Vec<CatInBag>,
 }
 
 pub enum UiRequest {
@@ -120,6 +124,7 @@ impl GameState {
         questions_per_topic: usize,
         tours: Vec<TourDescription>,
         manual_questions: Vec<(String, usize)>,
+        cats_in_bags: Vec<CatInBag>,
     ) -> Result<Self, Error> {
         if questions_per_topic == 0 {
             return Err(err_msg(String::from("questions per topic can't be zero")));
@@ -153,6 +158,7 @@ impl GameState {
             current_tour: 0,
             current_multiplier: 0,
             manual_questions,
+            cats_in_bags,
         })
     }
 
@@ -187,6 +193,9 @@ impl GameState {
             }
             State::WaitingForTopic => {
                 eprintln!("Waiting for the choice of topic");
+            }
+            State::CatInBagChoosingPlayer(..) => {
+                eprintln!("Waiting while cat in bag player is chosen");
             }
         }
     }
@@ -580,6 +589,19 @@ impl GameState {
             }
         }
 
+        let maybe_cat_in_bag = self.is_cat_in_bag(&topic, &cost);
+        if let Some((new_topic, question)) = maybe_cat_in_bag {
+            self.set_state(State::CatInBagChoosingPlayer(new_topic, question.clone()));
+            return vec![
+                UiRequest::SendToAdmin(format!(
+                    "question: {}\nanswer: {}",
+                    question.question(),
+                    question.answer(),
+                )),
+                UiRequest::SendTextToMainChat("Кот в мешке! Кто играет?".to_string()),
+            ];
+        }
+
         match questions_storage
             .get(topic.clone(), cost / self.current_multiplier)
         {
@@ -711,6 +733,25 @@ impl GameState {
             .is_some()
     }
 
+    fn is_cat_in_bag(&mut self, cur_topic: &String, cur_cost: &usize) -> Option<(String, Question)> {
+        for cat_in_bag in &self.cats_in_bags {
+            if &cat_in_bag.old_topic == cur_topic && &cat_in_bag.cost == cur_cost {
+                return Some(
+                    (
+                        cat_in_bag.new_topic.clone(),
+                        Question::new(
+                            cat_in_bag.question.clone(),
+                            cat_in_bag.answer.clone(),
+                            cat_in_bag.comments.clone(),
+                        )
+                    )
+                );
+            }
+        }
+
+        None
+    }
+
     fn is_current_player(&self, id: UserId) -> bool {
         match self.current_player {
             Some(ref p) => p.id() == id,
@@ -795,7 +836,7 @@ mod test {
         }
     }
 
-    fn create_game_state(user: UserId) -> GameState {
+    fn create_game_state(user: UserId) -> (GameState, Box<dyn QuestionsStorage>) {
         let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![
             TourDescription {
@@ -811,11 +852,12 @@ mod test {
                 }],
             },
         ];
-        GameState::new(user, questions_storage, 5, tours, vec![]).unwrap()
+        (GameState::new(user, &questions_storage, 5, tours, vec![], vec![]).unwrap(), questions_storage)
     }
 
     fn select_question<T: ToString>(
         game_state: &mut GameState,
+        questions_storage: &Box<dyn QuestionsStorage>,
         topic: T,
         player: UserId,
         cost: usize,
@@ -823,14 +865,14 @@ mod test {
         let topic = topic.to_string();
         game_state.set_current_player(player).unwrap();
         game_state.select_topic(topic.clone(), player);
-        game_state.select_question(topic, cost, player);
+        game_state.select_question(topic, cost, player, questions_storage);
         game_state.timeout();
         game_state.timeout();
     }
 
     #[test]
     fn test_add_player() {
-        let mut game_state = create_game_state(UserId::from(1));
+        let (mut game_state, _) = create_game_state(UserId::from(1));
         game_state.add_player(UserId::from(1), String::from("new"));
         game_state.add_player(UserId::from(1), String::from("new"));
         assert_eq!(game_state.get_players().len(), 1);
@@ -838,7 +880,7 @@ mod test {
 
     #[test]
     fn test_start_game() {
-        let mut game_state = create_game_state(UserId::from(1));
+        let (mut game_state, _) = create_game_state(UserId::from(1));
         assert_eq!(game_state.get_state(), &State::WaitingForPlayersToJoin);
 
         game_state.start(UserId::from(2));
@@ -860,7 +902,7 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
-        let mut game_state = create_game_state(admin);
+        let (mut game_state, questions_storage) = create_game_state(admin);
         game_state.add_player(p1, String::from("new_1"));
         game_state.add_player(p2, String::from("new_2"));
         game_state.start(admin);
@@ -884,7 +926,7 @@ mod test {
             }
         }
 
-        game_state.select_question("Sport", 100, p1);
+        game_state.select_question("Sport", 100, p1, &questions_storage);
         game_state.timeout();
         match game_state.get_state() {
             &State::Falsestart(_, _) => {}
@@ -909,11 +951,11 @@ mod test {
         assert_eq!(game_state.get_state(), &State::WaitingForTopic);
 
         game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 1, p1);
+        game_state.select_question("Sport", 1, p1, &questions_storage);
         // Cannot select already selected question
         assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
 
-        game_state.select_question("Sport", 200, p2);
+        game_state.select_question("Sport", 200, p2, &questions_storage);
         // Only current player can select next question
         assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
     }
@@ -930,11 +972,11 @@ mod test {
         }];
 
         // 0 question number
-        assert!(GameState::new(admin, questions_storage, 0, tours.clone(), vec![],).is_err());
+        assert!(GameState::new(admin, &questions_storage, 0, tours.clone(), vec![], vec![]).is_err());
 
         // Non existing topic
         let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
-        assert!(GameState::new(admin, questions_storage, 5, tours, vec![],).is_err());
+        assert!(GameState::new(admin, &questions_storage, 5, tours, vec![], vec![]).is_err());
 
         // Incorrect question number
         let tours = vec![TourDescription {
@@ -945,20 +987,20 @@ mod test {
         }];
 
         let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
-        assert!(GameState::new(admin, questions_storage, 6, tours, vec![],).is_err());
+        assert!(GameState::new(admin, &questions_storage, 6, tours, vec![], vec![]).is_err());
     }
 
     #[test]
     fn test_tours_simple() {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
-        let mut game_state = create_game_state(admin);
+        let (mut game_state, questions_storage) = create_game_state(admin);
         game_state.add_player(p1, String::from("new_1"));
         game_state.start(admin);
         game_state.next_tour(admin);
         game_state.next_question(admin);
 
-        select_question(&mut game_state, "Movies", p1, 200);
+        select_question(&mut game_state, &questions_storage, "Movies", p1, 200);
         game_state.message(p1, String::from("1"));
         game_state.yes_reply(admin);
 
@@ -969,13 +1011,13 @@ mod test {
     fn test_falsestarts_simple() {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
-        let mut game_state = create_game_state(admin);
+        let (mut game_state, questions_storage) = create_game_state(admin);
         game_state.add_player(p1, String::from("new_1"));
         game_state.start(admin);
         game_state.next_question(admin);
 
         game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 200, p1);
+        game_state.select_question("Sport", 200, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -993,7 +1035,7 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
-        let mut game_state = create_game_state(admin);
+        let (mut game_state, questions_storage) = create_game_state(admin);
         game_state.add_player(p1, String::from("new_1"));
         game_state.add_player(p2, String::from("new_2"));
         game_state.start(admin);
@@ -1001,7 +1043,7 @@ mod test {
 
         game_state.set_current_player(p1).unwrap();
         game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 100, p1);
+        game_state.select_question("Sport", 100, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1017,7 +1059,7 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
-        let mut game_state = create_game_state(admin);
+        let (mut game_state, questions_storage) = create_game_state(admin);
         game_state.add_player(p1, String::from("new_1"));
         game_state.add_player(p2, String::from("new_2"));
         game_state.start(admin);
@@ -1025,7 +1067,7 @@ mod test {
 
         game_state.set_current_player(p1).unwrap();
         game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 100, p1);
+        game_state.select_question("Sport", 100, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1072,14 +1114,14 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
-        let mut game_state = create_game_state(admin);
+        let (mut game_state, questions_storage) = create_game_state(admin);
         game_state.add_player(p1, String::from("new_1"));
         game_state.add_player(p2, String::from("new_2"));
         game_state.start(admin);
 
         // first no, second no
         game_state.next_question(admin);
-        select_question(&mut game_state, "Sport", p1, 100);
+        select_question(&mut game_state, &questions_storage, "Sport", p1, 100);
         game_state.message(p1, String::from("1"));
         game_state.no_reply(admin);
         game_state.message(p2, String::from("1"));
@@ -1092,7 +1134,7 @@ mod test {
 
         // first no, second yes
         game_state.next_question(admin);
-        select_question(&mut game_state, "Sport", p1, 200);
+        select_question(&mut game_state, &questions_storage, "Sport", p1, 200);
         game_state.message(p1, String::from("1"));
         game_state.no_reply(admin);
         game_state.message(p2, String::from("1"));
@@ -1108,7 +1150,7 @@ mod test {
         let admin_id = UserId::from(1);
         let p1_id = UserId::from(2);
         let p2_id = UserId::from(3);
-        let mut game_state = create_game_state(admin_id);
+        let (mut game_state, questions_storage) = create_game_state(admin_id);
         game_state.add_player(p1_id, String::from("new_1"));
         game_state.add_player(p2_id, String::from("new_2"));
         game_state.start(admin_id);
@@ -1119,7 +1161,7 @@ mod test {
 
         // first question asked
         game_state.next_question(admin_id);
-        select_question(&mut game_state, "Sport", p1_id, 100);
+        select_question(&mut game_state, &questions_storage, "Sport", p1_id, 100);
         match game_state.get_state() {
             &State::CanAnswer(_, _) => {}
             _ => {
@@ -1162,7 +1204,7 @@ mod test {
         assert_eq!(game_state.get_state(), &State::Pause);
 
         game_state.next_question(admin_id);
-        select_question(&mut game_state, "Sport", p1_id, 200);
+        select_question(&mut game_state, &questions_storage, "Sport", p1_id, 200);
         match game_state.get_state() {
             &State::CanAnswer(_, _) => {}
             _ => {
@@ -1212,10 +1254,11 @@ mod test {
 
         let mut game_state = GameState::new(
             admin_id,
-            questions_storage,
+            &questions_storage,
             5,
             tours,
             vec![("Sport".to_string(), 100)],
+            vec![],
         )
         .unwrap();
 
@@ -1225,7 +1268,7 @@ mod test {
         game_state.next_question(admin_id);
         game_state.set_current_player(p1_id).unwrap();
         game_state.select_topic("Sport", p1_id);
-        game_state.select_question("Sport", 100, p1_id);
+        game_state.select_question("Sport", 100, p1_id, &questions_storage);
 
         match game_state.get_state() {
             &State::Pause => {}

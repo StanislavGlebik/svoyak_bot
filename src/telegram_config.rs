@@ -21,12 +21,12 @@ pub struct Question {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CatInBag {
-    old_topic: String,
-    cost: usize,
-    new_topic: String,
-    question: String,
-    answer: String,
-    comments: String,
+    pub old_topic: String,
+    pub cost: usize,
+    pub new_topic: String,
+    pub question: String,
+    pub answer: String,
+    pub comments: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -49,6 +49,7 @@ pub struct Config {
     pub questions_per_topic: usize,
     pub tours: Vec<TourDescription>,
     pub manual_questions: Vec<(String, usize)>,
+    pub cats_in_bags: Vec<CatInBag>,
 }
 
 const DEFAULT_ADMIN_ID: i64 = 125732128;
@@ -103,6 +104,7 @@ impl Config {
                 .into_iter()
                 .map(|question| (question.topic, question.cost))
                 .collect(),
+            cats_in_bags: config.cats_in_bags.unwrap_or(vec![]),
         }
     }
 }
