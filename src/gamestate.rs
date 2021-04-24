@@ -1285,4 +1285,49 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn test_cats_in_bags_questions() {
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
+        let tours = vec![TourDescription {
+            multiplier: 100,
+            topics: vec![Topic {
+                name: "Sport".to_string(),
+            }],
+        }];
+
+        let admin_id = UserId::from(1);
+
+        let mut game_state = GameState::new(
+            admin_id,
+            &questions_storage,
+            5,
+            tours,
+            vec![("Sport".to_string(), 100)],
+            vec![
+                CatInBag {
+                    old_topic: "Sport".to_string(),
+                    cost: 100,
+                    new_topic: "CatInBag".to_string(),
+                    question: "question".to_string(),
+                    answer: "answer".to_string(),
+                    comments: None,
+                }
+            ],
+        )
+        .unwrap();
+
+        let p1_id = UserId::from(2);
+        let p2_id = UserId::from(3);
+        game_state.add_player(p1_id, String::from("new_1"));
+        game_state.add_player(p2_id, String::from("new_2"));
+        game_state.start(admin_id);
+
+        game_state.next_question(admin_id);
+        game_state.set_current_player(p1_id).unwrap();
+        game_state.select_topic("Sport", p1_id);
+        game_state.select_question("Sport", 100, p1_id, &questions_storage);
+
+        assert!(matches!(game_state.get_state(), State::CatInBagChoosingPlayer(_, _)));
+    }
 }
