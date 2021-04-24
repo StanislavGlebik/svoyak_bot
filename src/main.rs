@@ -139,7 +139,7 @@ fn questioncosts_inline_keyboard(topic: String, costs: Vec<usize>) -> InlineKeyb
 fn cat_in_bag_player_inline_keyboard(players: Vec<player::Player>) -> InlineKeyboardMarkup {
     let mut inline_markup = InlineKeyboardMarkup::new();
     for player in players {
-        let data = format!("/cat_in_bag_choose_player_{}", player.id());
+        let data = format!("/cat_in_bag_choose_player_{}", player.name());
         let row = inline_markup.add_empty_row();
         row.push(InlineKeyboardButton::callback(player.name().to_string(), data))
     }

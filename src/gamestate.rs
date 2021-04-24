@@ -648,6 +648,42 @@ impl GameState {
         }
     }
 
+    pub fn select_cat_in_bag_player(&mut self, user: UserId, selected_player: String) -> Vec<UiRequest> {
+        let cur_state = self.state.clone();
+        match cur_state {
+            State::CatInBagChoosingPlayer(topic, question) => {
+                if Some(user) != self.current_player.clone().map(|x| x.id()) {
+                    eprintln!("invalid user {} tried to select cat in bag player", user);
+                    return vec![];
+                }
+
+                let players = self.players.clone();
+                for (player, _) in players {
+                    // Can't select themselves
+                    if player.id() == user {
+                        continue;
+                    }
+                    if player.name() == &selected_player {
+                        self.current_player = Some(player.clone());
+                        // TODO(stash): fix cost
+                        self.set_state(State::Answering(question, self.current_multiplier as i64));
+                        return vec![UiRequest::SendTextToMainChat(format!(
+                            "Играем с {}", player.name()
+                        ))];
+                    }
+                }
+
+                eprintln!("unknown player {} for cat in bag", selected_player);
+                vec![]
+
+            }
+            _ => {
+                eprintln!("not in cat in bag");
+                vec![]
+            }
+        }
+    }
+
     pub fn get_score(&mut self, _user: UserId) -> Vec<UiRequest> {
         let mut res = String::new();
         for (player, score) in self.players.iter() {
@@ -1328,6 +1364,19 @@ mod test {
         game_state.select_topic("Sport", p1_id);
         game_state.select_question("Sport", 100, p1_id, &questions_storage);
 
+        // Wrong choices
         assert!(matches!(game_state.get_state(), State::CatInBagChoosingPlayer(_, _)));
+        game_state.select_cat_in_bag_player(p2_id, "new_1".to_string());
+        assert!(matches!(game_state.get_state(), State::CatInBagChoosingPlayer(_, _)));
+        game_state.select_cat_in_bag_player(p2_id, "new_2".to_string());
+        assert!(matches!(game_state.get_state(), State::CatInBagChoosingPlayer(_, _)));
+
+        game_state.select_cat_in_bag_player(p1_id, "new_1".to_string());
+        assert!(matches!(game_state.get_state(), State::CatInBagChoosingPlayer(_, _)));
+
+        // Right choice
+        game_state.select_cat_in_bag_player(p1_id, "new_2".to_string());
+        assert!(matches!(game_state.get_state(), State::Answering(_, _)));
+        assert_eq!(game_state.current_player.map(|x| x.id()), Some(p2_id));
     }
 }
