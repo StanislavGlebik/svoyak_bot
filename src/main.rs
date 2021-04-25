@@ -182,6 +182,7 @@ enum CallbackMessage {
     AnswerYes,
     AnswerNo,
     Unknown,
+    CatInBagPlayerChosen(String),
 }
 
 fn parse_text_message(data: &String) -> TextMessage {
@@ -262,6 +263,11 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
 
     if data == ANSWER_NO {
         return CallbackMessage::AnswerNo;
+    }
+
+    if data.starts_with("/cat_in_bag_choose_player_") {
+        let data = data.trim_start_matches("/cat_in_bag_choose_player_");
+        return CallbackMessage::CatInBagPlayerChosen(data.to_string());
     }
 
     CallbackMessage::Unknown
@@ -361,6 +367,9 @@ fn main() -> Result<(), Error> {
                                 }
                                 CallbackMessage::AnswerYes => gamestate.yes_reply(callback.from.id),
                                 CallbackMessage::AnswerNo => gamestate.no_reply(callback.from.id),
+                                CallbackMessage::CatInBagPlayerChosen(player) => {
+                                    gamestate.select_cat_in_bag_player(callback.from.id, player)
+                                }
                                 CallbackMessage::Unknown => vec![],
                             }
                         }

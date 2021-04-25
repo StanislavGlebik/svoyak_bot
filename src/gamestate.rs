@@ -20,7 +20,8 @@ enum State {
     BeforeQuestionAsked(Question, i64),
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
-    Answering(Question, i64),
+    // question, cost, anyone can answer
+    Answering(Question, i64, bool),
 
     CatInBagChoosingPlayer(String, Question),
 
@@ -171,7 +172,7 @@ impl GameState {
                 self.players_falsestarted.clear();
                 self.players_answered_current_question.clear();
             }
-            State::Answering(_, _) => {
+            State::Answering(_, _, _) => {
                 eprintln!(
                     "Now waiting for player '{:?}' to answer",
                     self.current_player.as_ref()
@@ -313,7 +314,8 @@ impl GameState {
                     self.current_player = Some(player.clone());
                     self.players_answered_current_question
                         .insert(player.clone());
-                    self.set_state(State::Answering(question, cost));
+                    // Anyone can answer
+                    self.set_state(State::Answering(question, cost, true));
                     vec![
                         UiRequest::StopTimer,
                         UiRequest::SendTextToMainChat(format!("Отвечает {}", player.name())),
@@ -440,7 +442,7 @@ impl GameState {
             println!("non-admin yes reply");
             return vec![];
         }
-        if let State::Answering(question, cost) = &self.state {
+        if let State::Answering(question, cost, _) = &self.state {
             let message = match question.comments() {
                 Some(comments) => {
                     format!("{}\nКомментарий: {}", CORRECT_ANSWER, comments)
@@ -463,25 +465,36 @@ impl GameState {
     }
 
     pub fn no_reply(&mut self, user: UserId) -> Vec<UiRequest> {
+        println!("no reply");
         if user != self.admin_user {
-            println!("non-admin yes reply");
+            println!("non-admin no reply");
             return vec![];
         }
 
-        if let State::Answering(question, cost) = self.state.clone() {
+        if let State::Answering(question, cost, anyone_can_answer) = self.state.clone() {
             match self.update_current_player_score(-cost) {
                 Ok(_) => {
-                    if self.players_answered_current_question.len() != self.players.len() {
-                        self.set_state(State::CanAnswer(question, cost));
-                        self.players_falsestarted.clear();
-                        vec![UiRequest::Timeout(
-                            Some(INCORRECT_ANSWER.to_string()),
-                            Delay::Long,
-                        )]
+                    if anyone_can_answer {
+                        if self.players_answered_current_question.len() != self.players.len() {
+                            self.set_state(State::CanAnswer(question, cost));
+                            self.players_falsestarted.clear();
+                            vec![
+                                UiRequest::SendTextToMainChat(INCORRECT_ANSWER.to_string()),
+                                UiRequest::Timeout(
+                                    None,
+                                    Delay::Long,
+                                )
+                            ]
+                        } else {
+                            self.close_unanswered_question(
+                                question,
+                                Some(String::from("Все попытались, но ни у кого не получилось")),
+                            )
+                        }
                     } else {
                         self.close_unanswered_question(
                             question,
-                            Some(String::from("Все попытались, но ни у кого не получилось")),
+                            Some(String::from("Нет")),
                         )
                     }
                 }
@@ -665,11 +678,20 @@ impl GameState {
                     }
                     if player.name() == &selected_player {
                         self.current_player = Some(player.clone());
+                        self.player_which_chose_question = Some(player.clone());
                         // TODO(stash): fix cost
-                        self.set_state(State::Answering(question, self.current_multiplier as i64));
-                        return vec![UiRequest::SendTextToMainChat(format!(
-                            "Играем с {}", player.name()
-                        ))];
+                        let question_msg = question.question();
+                        // Only one person can answer
+                        self.set_state(State::Answering(question, self.current_multiplier as i64, false));
+                        return vec![
+                            UiRequest::SendTextToMainChat(format!(
+                                "Играем с {}. Тема: {}", player.name(), topic,
+                            )),
+                            UiRequest::SendTextToMainChat(format!(
+                                "{}", question_msg,
+                            )),
+                            UiRequest::AskAdminYesNo("Correct answer?".to_string()),
+                        ];
                     }
                 }
 
