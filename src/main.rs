@@ -146,6 +146,16 @@ fn cat_in_bag_player_inline_keyboard(players: Vec<player::Player>) -> InlineKeyb
     inline_markup
 }
 
+fn cat_in_bag_cost_inline_keyboard(costs: Vec<usize>) -> InlineKeyboardMarkup {
+    let mut inline_markup = InlineKeyboardMarkup::new();
+    for cost in costs {
+        let data = format!("/cat_in_bag_choose_cost_{}", cost);
+        let row = inline_markup.add_empty_row();
+        row.push(InlineKeyboardButton::callback(format!("{}", cost), data))
+    }
+    inline_markup
+}
+
 fn merge_updates_and_timeouts(
     updates_stream: UpdatesStream,
     timeouts: timeout_stream::TimeoutStream,
@@ -183,6 +193,7 @@ enum CallbackMessage {
     AnswerNo,
     Unknown,
     CatInBagPlayerChosen(String),
+    CatInBagCostChosen(usize),
 }
 
 fn parse_text_message(data: &String) -> TextMessage {
@@ -270,6 +281,19 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
         return CallbackMessage::CatInBagPlayerChosen(data.to_string());
     }
 
+    if data.starts_with("/cat_in_bag_choose_cost_") {
+        let data = data.trim_start_matches("/cat_in_bag_choose_cost_");
+        let maybe_cost = data.parse::<usize>();
+        match maybe_cost {
+            Ok(cost) => {
+                return CallbackMessage::CatInBagCostChosen(cost);
+            }
+            Err(_) => {
+                return CallbackMessage::Unknown;
+            }
+        }
+    }
+
     CallbackMessage::Unknown
 }
 
@@ -314,6 +338,7 @@ fn main() -> Result<(), Error> {
     let question_storage: Box<dyn QuestionsStorage> = Box::new(CsvQuestionsStorage::new(
         config.questions_storage_path.clone(),
     )?);
+    eprintln!("loaded questions");
     let mut gamestate = gamestate::GameState::new(
         config.admin_user,
         &question_storage,
@@ -322,6 +347,7 @@ fn main() -> Result<(), Error> {
         config.manual_questions.clone(),
         config.cats_in_bags.clone(),
     )?;
+    eprintln!("created gamestate");
 
     let fut = async move {
         let mut s = requests_stream.compat();
@@ -369,6 +395,9 @@ fn main() -> Result<(), Error> {
                                 CallbackMessage::AnswerNo => gamestate.no_reply(callback.from.id),
                                 CallbackMessage::CatInBagPlayerChosen(player) => {
                                     gamestate.select_cat_in_bag_player(callback.from.id, player)
+                                }
+                                CallbackMessage::CatInBagCostChosen(cost) => {
+                                    gamestate.select_cat_in_bag_cost(callback.from.id, cost)
                                 }
                                 CallbackMessage::Unknown => vec![],
                             }
@@ -481,6 +510,12 @@ fn main() -> Result<(), Error> {
                     gamestate::UiRequest::CatInBagChoosePlayer(players) => {
                         let inline_keyboard = cat_in_bag_player_inline_keyboard(players);
                         let mut msg = SendMessage::new(game_chat, "Кто играет?".to_string());
+                        msg.reply_markup(inline_keyboard);
+                        api.send(msg).await?;
+                    }
+                    gamestate::UiRequest::CatInBagChooseCost(costs) => {
+                        let inline_keyboard = cat_in_bag_cost_inline_keyboard(costs);
+                        let mut msg = SendMessage::new(game_chat, "Выберите ставку".to_string());
                         msg.reply_markup(inline_keyboard);
                         api.send(msg).await?;
                     }

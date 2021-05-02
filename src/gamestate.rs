@@ -24,6 +24,7 @@ enum State {
     Answering(Question, i64, bool),
 
     CatInBagChoosingPlayer(String, Question),
+    CatInBagChoosingCost(Question),
 
     Pause,
 }
@@ -56,6 +57,7 @@ pub enum UiRequest {
     SendScoreTable(ScoreTable),
     StopTimer,
     CatInBagChoosePlayer(Vec<Player>),
+    CatInBagChooseCost(Vec<usize>),
 }
 
 pub enum Delay {
@@ -197,6 +199,9 @@ impl GameState {
                 eprintln!("Waiting for the choice of topic");
             }
             State::CatInBagChoosingPlayer(..) => {
+                eprintln!("Waiting while cat in bag player is chosen");
+            }
+            State::CatInBagChoosingCost(..) => {
                 eprintln!("Waiting while cat in bag player is chosen");
             }
         }
@@ -679,18 +684,14 @@ impl GameState {
                     if player.name() == &selected_player {
                         self.current_player = Some(player.clone());
                         self.player_which_chose_question = Some(player.clone());
-                        // TODO(stash): fix cost
-                        let question_msg = question.question();
-                        // Only one person can answer
-                        self.set_state(State::Answering(question, self.current_multiplier as i64, false));
+                        self.set_state(State::CatInBagChoosingCost(question));
                         return vec![
                             UiRequest::SendTextToMainChat(format!(
                                 "Играем с {}. Тема: {}", player.name(), topic,
                             )),
-                            UiRequest::SendTextToMainChat(format!(
-                                "{}", question_msg,
-                            )),
-                            UiRequest::AskAdminYesNo("Correct answer?".to_string()),
+                            UiRequest::CatInBagChooseCost(vec![
+                                self.current_multiplier, self.current_multiplier * self.questions_per_topic
+                            ])
                         ];
                     }
                 }
@@ -698,6 +699,35 @@ impl GameState {
                 eprintln!("unknown player {} for cat in bag", selected_player);
                 vec![]
 
+            }
+            _ => {
+                eprintln!("not in cat in bag");
+                vec![]
+            }
+        }
+    }
+
+    pub fn select_cat_in_bag_cost(&mut self, user: UserId, cost: usize) -> Vec<UiRequest> {
+        let cur_state = self.state.clone();
+        match cur_state {
+            State::CatInBagChoosingCost(question) => {
+                if Some(user) != self.current_player.clone().map(|x| x.id()) {
+                    eprintln!("invalid user {} tried to select cat in bag cost", user);
+                    return vec![];
+                }
+                if cost != self.current_multiplier && cost != self.current_multiplier * self.questions_per_topic {
+                    eprintln!("invalid cost {}", cost);
+                    return vec![];
+                }
+
+                let question_msg = question.question();
+                // Only one person can answer
+                self.set_state(State::Answering(question, cost as i64, false));
+
+                return vec![
+                    UiRequest::SendTextToMainChat(question_msg),
+                    UiRequest::AskAdminYesNo("Correct answer?".to_string()),
+                ];
             }
             _ => {
                 eprintln!("not in cat in bag");
