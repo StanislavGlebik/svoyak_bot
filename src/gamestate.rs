@@ -453,11 +453,6 @@ impl GameState {
             return vec![];
         }
         if let State::Answering(question, cost, _) = &self.state {
-            let mut res_score = String::new();
-            for (player, score) in self.players.iter() {
-                res_score += &format!("{}: {}\n", player.name(), score);
-            }
-            println!("score: {}", res_score);
 
             let message = match question.comments() {
                 Some(comments) => {
@@ -467,13 +462,21 @@ impl GameState {
                     String::from(CORRECT_ANSWER)
                 }
             };
-            match self.update_current_player_score(*cost) {
+            let res = match self.update_current_player_score(*cost) {
                 Ok(_) => self.close_answered_question(Some(message)),
                 Err(err_msg) => {
                     println!("{}", err_msg);
                     vec![]
                 }
+            };
+
+            let mut res_score = String::new();
+            for (player, score) in self.players.iter() {
+                res_score += &format!("{}: {}\n", player.name(), score);
             }
+            println!("score: {}", res_score);
+
+            res
         } else {
             println!("unexpected yes answer");
             vec![]
@@ -488,13 +491,8 @@ impl GameState {
         }
 
         if let State::Answering(question, cost, anyone_can_answer) = self.state.clone() {
-            let mut res_score = String::new();
-            for (player, score) in self.players.iter() {
-                res_score += &format!("{}: {}\n", player.name(), score);
-            }
-            println!("score: {}", res_score);
 
-            match self.update_current_player_score(-cost) {
+            let res = match self.update_current_player_score(-cost) {
                 Ok(_) => {
                     if anyone_can_answer {
                         if self.players_answered_current_question.len() != self.players.len() {
@@ -524,7 +522,14 @@ impl GameState {
                     println!("{}", err_msg);
                     vec![]
                 }
+            };
+
+            let mut res_score = String::new();
+            for (player, score) in self.players.iter() {
+                res_score += &format!("{}: {}\n", player.name(), score);
             }
+            println!("score: {}", res_score);
+            res
         } else {
             println!("unexpected yes answer");
             vec![]
