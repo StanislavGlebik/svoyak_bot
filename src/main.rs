@@ -5,7 +5,7 @@ use futures::sync::mpsc;
 use futures::{Future, Sink, Stream};
 use futures_03::{
     compat::{Future01CompatExt, Stream01CompatExt},
-    FutureExt, TryFutureExt, TryStreamExt,
+    FutureExt, StreamExt, TryFutureExt, TryStreamExt,
 };
 use std::fs::File;
 use std::io::prelude::*;
@@ -351,11 +351,19 @@ fn main() -> Result<(), Error> {
 
     let fut = async move {
         let mut s = requests_stream.compat();
-        while let Some(request) = s.try_next().await? {
+        while let Some(request) = s.next().await {
+            let request = match request {
+                Ok(request) => request,
+                Err(err) => {
+                    println!("{}", err);
+                    continue;
+                }
+            };
             let res = match request {
                 Ok(telegram_update) => {
                     match telegram_update.kind {
                         UpdateKind::Message(message) => {
+                            println!("message chat id {}", message.chat.id());
                             if let MessageKind::Text { ref data, .. } = message.kind {
                                 match parse_text_message(data) {
                                     TextMessage::Join(name) => {

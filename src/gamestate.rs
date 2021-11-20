@@ -171,6 +171,11 @@ impl GameState {
         match self.state {
             State::WaitingForQuestion => {
                 eprintln!("/question command was executed");
+
+                for (player, score) in self.players.iter() {
+                    eprintln!("{}: {}\n", player.name(), score);
+                }
+
                 self.players_falsestarted.clear();
                 self.players_answered_current_question.clear();
             }
@@ -448,6 +453,12 @@ impl GameState {
             return vec![];
         }
         if let State::Answering(question, cost, _) = &self.state {
+            let mut res_score = String::new();
+            for (player, score) in self.players.iter() {
+                res_score += &format!("{}: {}\n", player.name(), score);
+            }
+            println!("score: {}", res_score);
+
             let message = match question.comments() {
                 Some(comments) => {
                     format!("{}\nКомментарий: {}", CORRECT_ANSWER, comments)
@@ -477,6 +488,12 @@ impl GameState {
         }
 
         if let State::Answering(question, cost, anyone_can_answer) = self.state.clone() {
+            let mut res_score = String::new();
+            for (player, score) in self.players.iter() {
+                res_score += &format!("{}: {}\n", player.name(), score);
+            }
+            println!("score: {}", res_score);
+
             match self.update_current_player_score(-cost) {
                 Ok(_) => {
                     if anyone_can_answer {
