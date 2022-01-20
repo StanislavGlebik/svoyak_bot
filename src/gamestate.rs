@@ -630,55 +630,61 @@ impl GameState {
             }
         }
 
+        let mut reply = vec![];
+        reply.push(
+            UiRequest::SendTextToMainChat(format!("Играем тему {}, вопрос за {}", topic, cost))
+        );
+
         let maybe_cat_in_bag = self.is_cat_in_bag(&topic, &cost);
         if let Some((new_topic, question)) = maybe_cat_in_bag {
             self.set_state(State::CatInBagChoosingPlayer(new_topic, question.clone()));
-            return vec![
+            reply.push(
                 UiRequest::SendToAdmin(format!(
                     "question: {}\nanswer: {}",
                     question.question(),
                     question.answer(),
-                )),
-                UiRequest::SendTextToMainChat("Кот в мешке!".into()),
+                ))
+            );
+            reply.push(UiRequest::SendTextToMainChat("Кот в мешке!".into()));
+            reply.push(
                 UiRequest::CatInBagChoosePlayer(
                     self.players
                         .keys()
                         .map(|player| player.clone())
                         .filter(|player| Some(player) != self.current_player.as_ref())
                         .collect::<Vec<_>>()
-                ),
-            ];
+                )
+            );
+            return reply;
         }
 
         match questions_storage
             .get(topic.clone(), cost / self.current_multiplier)
         {
             Some(question) => {
+                reply.push(
+                    UiRequest::SendToAdmin(format!(
+                        "question: {}\nanswer: {}",
+                        question.question(),
+                        question.answer(),
+                    ))
+                );
+
                 if self.is_manual(&topic, &cost) {
                     eprintln!("manual question");
                     self.set_state(State::Pause);
-                    vec![
-                        UiRequest::SendToAdmin(format!(
-                            "question: {}\nanswer: {}",
-                            question.question(),
-                            question.answer()
-                        )),
+                    reply.push(
                         UiRequest::SendTextToMainChat("Вопрос играется вручную".into()),
-                    ]
+                    );
+                    reply
                 } else {
                     eprintln!("automatic question");
                     self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
                     self.player_which_chose_question = self.current_player.clone();
-                    let main_chat_message = format!("Играем тему {}, вопрос за {}", topic, cost);
-                    vec![
-                        UiRequest::SendToAdmin(format!(
-                            "question: {}\nanswer: {}",
-                            question.question(),
-                            question.answer()
-                        )),
-                        UiRequest::SendTextToMainChat(main_chat_message),
+                    reply.push(
                         UiRequest::Timeout(None, Delay::Medium),
-                    ]
+                    );
+                    reply
                 }
             }
             None => {

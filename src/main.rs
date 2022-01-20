@@ -475,7 +475,7 @@ fn main() -> Result<(), Error> {
                     }
                     gamestate::UiRequest::ChooseQuestion(topic, costs) => {
                         let mut msg =
-                            SendMessage::new(game_chat, "Выберите цену".to_string());
+                            SendMessage::new(game_chat, format!("Выбрана тема '{}', выберите цену", topic));
                         let inline_keyboard = questioncosts_inline_keyboard(topic, costs);
                         msg.reply_markup(inline_keyboard);
                         api.send(msg).await?;
