@@ -833,6 +833,33 @@ impl GameState {
         vec![]
     }
 
+    pub fn hide_question(&mut self, topic: String, cost: usize, user: UserId) -> Vec<UiRequest> {
+        if user != self.admin_user {
+            eprintln!("non admin user tried to hide question");
+            return vec![];
+        }
+
+        let mut found = false;
+        for (cur_topic, costs) in &mut self.questions {
+            if cur_topic == &topic {
+                if costs.contains(&cost) {
+                    found = true;
+                    costs.retain(|elem| elem != &cost);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if found {
+            eprintln!("hidden question");
+        } else {
+            eprintln!("question and topic to hide not found");
+        }
+
+        vec![]
+    }
+
     fn reload_available_questions(&mut self) {
         self.questions.clear();
         match self.tours.get(self.current_tour) {

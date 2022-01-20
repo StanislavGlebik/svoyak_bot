@@ -185,6 +185,7 @@ enum TextMessage {
     ChangePlayer(String),
     NextTour,
     UpdateScore(String, i64),
+    HideQuestion(String, usize),
 }
 
 enum CallbackMessage {
@@ -221,6 +222,20 @@ fn parse_text_message(data: &String) -> TextMessage {
         let split: Vec<_> = data.splitn(2, ' ').collect();
         if split.len() == 2 {
             return TextMessage::ChangePlayer((*split.get(1).expect("should not happen")).to_string());
+        }
+    }
+
+    if data.starts_with("/hidequestion") {
+        let data = data.trim_start_matches("/hidequestion ");
+        let split: Vec<_> = data.splitn(2, ' ').collect();
+
+        if split.len() == 2 {
+            let cost = split.get(0).unwrap();
+            let topic = split.get(1).unwrap();
+            let cost = cost.parse();
+            if let Ok(cost) = cost {
+                return TextMessage::HideQuestion(topic.to_string(), cost);
+            }
         }
     }
 
@@ -394,6 +409,9 @@ fn main() -> Result<(), Error> {
                                     TextMessage::NextTour => gamestate.next_tour(message.from.id),
                                     TextMessage::UpdateScore(name, newscore) => {
                                         gamestate.update_score(name, newscore, message.from.id)
+                                    }
+                                    TextMessage::HideQuestion(topic, cost) => {
+                                        gamestate.hide_question(topic, cost, message.from.id)
                                     }
                                 }
                             } else {
