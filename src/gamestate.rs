@@ -35,7 +35,7 @@ pub struct GameState {
     players: HashMap<Player, i64>,
     current_player: Option<Player>,
     player_which_chose_question: Option<Player>,
-    questions: HashMap<String, Vec<usize>>,
+    questions: Vec<(String, Vec<usize>)>,
     players_falsestarted: HashSet<Player>,
     players_answered_current_question: HashSet<Player>,
     questions_per_topic: usize,
@@ -154,7 +154,7 @@ impl GameState {
             players: HashMap::new(),
             player_which_chose_question: None,
             current_player: None,
-            questions: HashMap::new(),
+            questions: Vec::new(),
             players_falsestarted: HashSet::new(),
             players_answered_current_question: HashSet::new(),
             questions_per_topic,
@@ -574,8 +574,8 @@ impl GameState {
         }
 
         let topic = topic.to_string();
-        match self.questions.clone().get(&topic) {
-            Some(costs) => {
+        match self.questions.iter().find(|(t, _)| t == &topic).cloned() {
+            Some((_, costs)) => {
                 if !costs.is_empty() {
                     self.set_state(State::WaitingForQuestion);
                     vec![UiRequest::ChooseQuestion(topic.clone(), costs.clone())]
@@ -607,9 +607,11 @@ impl GameState {
             return vec![];
         }
 
+        let mut found = false;
         let topic = topic.to_string();
-        match self.questions.get_mut(&topic) {
-            Some(costs) => {
+        for (cur_topic, costs) in &mut self.questions {
+            if cur_topic == &topic {
+                found = true;
                 if costs.contains(&cost) {
                     costs.retain(|elem| elem != &cost);
                     eprintln!(
@@ -624,10 +626,11 @@ impl GameState {
                     return vec![];
                 }
             }
-            None => {
-                println!("unknown topic");
-                return vec![];
-            }
+        }
+
+        if !found {
+            println!("unknown topic");
+            return vec![];
         }
 
         let mut reply = vec![];
@@ -817,7 +820,7 @@ impl GameState {
                     for i in 0..self.questions_per_topic {
                         costs.push((i + 1) * self.current_multiplier);
                     }
-                    self.questions.insert(topic.name.clone(), costs);
+                    self.questions.push((topic.name.clone(), costs));
                 }
             }
             None => {
