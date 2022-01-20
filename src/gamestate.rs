@@ -541,9 +541,18 @@ impl GameState {
         if let State::BeforeQuestionAsked(question, cost) = self.state.clone() {
             eprintln!("Falsestart section is about to start");
             self.set_state(State::Falsestart(question.clone(), cost));
+
+            let delay = if question.question().len() <= 100 {
+                Delay::Short
+            } else if question.question().len() <= 230 {
+                Delay::Medium
+            } else {
+                Delay::Long
+            };
+
             return vec![
                 UiRequest::SendTextToMainChat(question.question()),
-                UiRequest::Timeout(Some("!".into()), Delay::Short),
+                UiRequest::Timeout(Some("!".into()), delay),
             ];
         }
 
