@@ -787,6 +787,20 @@ impl GameState {
         vec![UiRequest::SendTextToMainChat(format!("{}", res))]
     }
 
+    pub fn change_player(&mut self, user: UserId, change_player: String) -> Vec<UiRequest> {
+        if user != self.admin_user {
+            eprintln!("non admin user tried to change player");
+            return vec![];
+        }
+
+        if let Some(player) = self.find_player_by_name(&change_player) {
+            self.current_player = Some(player.clone());
+            vec![UiRequest::SendTextToMainChat(format!("Играет {}", change_player))]
+        } else {
+            vec![UiRequest::SendTextToMainChat(format!("Игрок {} не найден", change_player))]
+        }
+    }
+
     pub fn update_score(&mut self, name: String, newscore: i64, user: UserId) -> Vec<UiRequest> {
         if user != self.admin_user {
             eprintln!("non admin user tried to update the score");

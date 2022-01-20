@@ -182,6 +182,7 @@ enum TextMessage {
     GetScore,
     StartGame,
     CurrentPlayer,
+    ChangePlayer(String),
     NextTour,
     UpdateScore(String, i64),
 }
@@ -214,6 +215,13 @@ fn parse_text_message(data: &String) -> TextMessage {
 
     if data == "/currentplayer" {
         return TextMessage::CurrentPlayer;
+    }
+
+    if data.starts_with("/changeplayer") {
+        let split: Vec<_> = data.splitn(2, ' ').collect();
+        if split.len() == 2 {
+            return TextMessage::ChangePlayer((*split.get(1).expect("should not happen")).to_string());
+        }
     }
 
     if data == "/nexttour" {
@@ -379,6 +387,9 @@ fn main() -> Result<(), Error> {
                                     TextMessage::GetScore => gamestate.get_score(message.from.id),
                                     TextMessage::CurrentPlayer => {
                                         gamestate.current_player(message.from.id)
+                                    }
+                                    TextMessage::ChangePlayer(player) => {
+                                        gamestate.change_player(message.from.id, player)
                                     }
                                     TextMessage::NextTour => gamestate.next_tour(message.from.id),
                                     TextMessage::UpdateScore(name, newscore) => {
