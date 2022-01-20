@@ -3,17 +3,6 @@ use std::fs::File;
 use telegram_bot;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Topic {
-    pub name: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct TourDescription {
-    pub multiplier: usize,
-    pub topics: Vec<Topic>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
 pub struct Question {
     topic: String,
     cost: usize,
@@ -35,7 +24,6 @@ struct RawConfig {
     pub game_chat_id: Option<i64>,
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
-    pub tours: Vec<TourDescription>,
     pub manual_questions: Option<Vec<Question>>,
     pub cats_in_bags: Option<Vec<CatInBag>>,
 }
@@ -47,7 +35,6 @@ pub struct Config {
     pub game_chat: Option<telegram_bot::ChatId>,
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
-    pub tours: Vec<TourDescription>,
     pub manual_questions: Vec<(String, usize)>,
     pub cats_in_bags: Vec<CatInBag>,
 }
@@ -76,7 +63,6 @@ impl RawConfig {
                     game_chat_id: None,
                     questions_storage_path: "storage.csv".into(),
                     questions_per_topic: 5,
-                    tours: vec![],
                     manual_questions: None,
                     cats_in_bags: None,
                 }
@@ -97,7 +83,6 @@ impl Config {
             game_chat: config.game_chat_id.map(telegram_bot::ChatId::from),
             questions_storage_path: config.questions_storage_path,
             questions_per_topic: config.questions_per_topic,
-            tours: config.tours,
             manual_questions: config
                 .manual_questions
                 .unwrap_or(vec![])

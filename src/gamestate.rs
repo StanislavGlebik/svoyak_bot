@@ -9,8 +9,8 @@ use failure::{err_msg, Error};
 use crate::messages::*;
 use crate::player::Player;
 use crate::question::Question;
-use crate::questionsstorage::QuestionsStorage;
-use crate::telegram_config::{CatInBag, TourDescription};
+use crate::questionsstorage::{TourDescription, QuestionsStorage};
+use crate::telegram_config::CatInBag;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
@@ -126,13 +126,13 @@ impl GameState {
         admin_user: UserId,
         questions_storage: &Box<dyn QuestionsStorage>,
         questions_per_topic: usize,
-        tours: Vec<TourDescription>,
         manual_questions: Vec<(String, usize)>,
         cats_in_bags: Vec<CatInBag>,
     ) -> Result<Self, Error> {
         if questions_per_topic == 0 {
             return Err(err_msg(String::from("questions per topic can't be zero")));
         }
+        let tours = questions_storage.get_tours();
         for tour in tours.iter() {
             for topic in tour.topics.iter() {
                 for i in 0..questions_per_topic {

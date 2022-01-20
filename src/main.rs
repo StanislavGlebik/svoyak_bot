@@ -366,7 +366,6 @@ fn main() -> Result<(), Error> {
         config.admin_user,
         &question_storage,
         config.questions_per_topic,
-        config.tours.clone(),
         config.manual_questions.clone(),
         config.cats_in_bags.clone(),
     )?;
