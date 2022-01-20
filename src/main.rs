@@ -367,7 +367,6 @@ fn main() -> Result<(), Error> {
         &question_storage,
         config.questions_per_topic,
         config.manual_questions.clone(),
-        config.cats_in_bags.clone(),
     )?;
     eprintln!("created gamestate");
 

@@ -10,6 +10,8 @@ pub trait QuestionsStorage {
     fn get(&self, topic_name: String, difficulty: usize) -> Option<Question>;
 
     fn get_tours(&self) -> Vec<TourDescription>;
+
+    fn get_cats_in_bags(&self) -> Vec<CatInBag>;
 }
 
 #[derive(Clone)]
@@ -23,11 +25,21 @@ pub struct TourDescription {
     pub topics: Vec<Topic>,
 }
 
+#[derive(Clone)]
+pub struct CatInBag {
+    pub old_topic: String,
+    pub cost: usize,
+    pub new_topic: String,
+    pub question: String,
+    pub answer: String,
+}
+
 // Questions for the same topic have to go one after another
 // Row: question,answer,optional comment,topic
 pub struct CsvQuestionsStorage {
     questions: HashMap<(String, usize), Question>,
     tours: Vec<TourDescription>,
+    cats_in_bags: Vec<CatInBag>,
 }
 
 impl CsvQuestionsStorage {
@@ -38,6 +50,7 @@ impl CsvQuestionsStorage {
         let mut questions_storage = HashMap::new();
 
         let mut tours = vec![];
+        let mut cats_in_bags = vec![];
         let mut i = 1;
         loop {
             let multiplier = 100 * i;
@@ -46,7 +59,6 @@ impl CsvQuestionsStorage {
                 break;
             }
             eprintln!("opening {:?}", file);
-
 
             let mut topics = vec![];
 
@@ -85,7 +97,20 @@ impl CsvQuestionsStorage {
                 }
                 match current_topic {
                     Some(ref current_topic) => {
-                        let question = Question::new(question, answer, comment);
+
+                        let question = if let Some((cat_in_bag_topic, question)) = check_if_cat_in_bag(question.to_string())? {
+                            let cat_in_bag = CatInBag {
+                                old_topic: current_topic.clone(),
+                                cost: current_difficulty * multiplier,
+                                new_topic: cat_in_bag_topic,
+                                question: question.clone(),
+                                answer: answer.to_string(),
+                            };
+                            cats_in_bags.push(cat_in_bag);
+                            Question::new(question, answer.to_string(), comment.map(|c| c.to_string()))
+                        } else {
+                            Question::new(question, &answer, comment)
+                        };
                         questions_storage.insert((current_topic.clone(), current_difficulty), question);
                     }
                     None => {
@@ -104,8 +129,32 @@ impl CsvQuestionsStorage {
         Ok(Self {
             questions: questions_storage,
             tours,
+            cats_in_bags,
         })
     }
+}
+
+fn check_if_cat_in_bag(question: String) -> Result<Option<(String, String)>, Error> {
+    let question = question.trim();
+    let cat_in_bag_prefix = "Кот в мешке.";
+    if question.starts_with(cat_in_bag_prefix) {
+        let question = question.trim_start_matches(cat_in_bag_prefix).trim();
+        let topic_prefix = "Тема: ";
+        if !question.starts_with(topic_prefix) {
+            return Err(err_msg("malformatted cat in bag"));
+        }
+        let question = question.trim_start_matches(topic_prefix);
+        let split: Vec<_> = question.splitn(2, ".").collect();
+        if split.len() != 2 {
+            return Err(err_msg("malformatted cat in bag"));
+        }
+
+        let topic = split[0];
+        let question = split[1];
+        return Ok(Some((topic.to_string(), question.to_string())));
+    }
+
+    Ok(None)
 }
 
 impl QuestionsStorage for CsvQuestionsStorage {
@@ -115,5 +164,9 @@ impl QuestionsStorage for CsvQuestionsStorage {
 
     fn get_tours(&self) -> Vec<TourDescription> {
         self.tours.clone()
+    }
+
+    fn get_cats_in_bags(&self) -> Vec<CatInBag> {
+        self.cats_in_bags.clone()
     }
 }

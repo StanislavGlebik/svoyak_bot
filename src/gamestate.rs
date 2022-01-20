@@ -9,8 +9,7 @@ use failure::{err_msg, Error};
 use crate::messages::*;
 use crate::player::Player;
 use crate::question::Question;
-use crate::questionsstorage::{TourDescription, QuestionsStorage};
-use crate::telegram_config::CatInBag;
+use crate::questionsstorage::{CatInBag, TourDescription, QuestionsStorage};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
@@ -127,7 +126,6 @@ impl GameState {
         questions_storage: &Box<dyn QuestionsStorage>,
         questions_per_topic: usize,
         manual_questions: Vec<(String, usize)>,
-        cats_in_bags: Vec<CatInBag>,
     ) -> Result<Self, Error> {
         if questions_per_topic == 0 {
             return Err(err_msg(String::from("questions per topic can't be zero")));
@@ -162,7 +160,7 @@ impl GameState {
             current_tour: 0,
             current_multiplier: 0,
             manual_questions,
-            cats_in_bags,
+            cats_in_bags: questions_storage.get_cats_in_bags(),
         })
     }
 
@@ -919,7 +917,7 @@ impl GameState {
                         Question::new(
                             cat_in_bag.question.clone(),
                             cat_in_bag.answer.clone(),
-                            cat_in_bag.comments.clone(),
+                            Some("".to_string()),
                         )
                     )
                 );

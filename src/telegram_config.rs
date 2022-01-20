@@ -8,16 +8,6 @@ pub struct Question {
     cost: usize,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct CatInBag {
-    pub old_topic: String,
-    pub cost: usize,
-    pub new_topic: String,
-    pub question: String,
-    pub answer: String,
-    pub comments: Option<String>,
-}
-
 #[derive(Serialize, Deserialize)]
 struct RawConfig {
     pub admin_id: i64,
@@ -25,7 +15,6 @@ struct RawConfig {
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
     pub manual_questions: Option<Vec<Question>>,
-    pub cats_in_bags: Option<Vec<CatInBag>>,
 }
 
 pub struct Config {
@@ -36,7 +25,6 @@ pub struct Config {
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
     pub manual_questions: Vec<(String, usize)>,
-    pub cats_in_bags: Vec<CatInBag>,
 }
 
 const DEFAULT_ADMIN_ID: i64 = 125732128;
@@ -64,7 +52,6 @@ impl RawConfig {
                     questions_storage_path: "storage.csv".into(),
                     questions_per_topic: 5,
                     manual_questions: None,
-                    cats_in_bags: None,
                 }
             }
         }
@@ -89,7 +76,6 @@ impl Config {
                 .into_iter()
                 .map(|question| (question.topic, question.cost))
                 .collect(),
-            cats_in_bags: config.cats_in_bags.unwrap_or(vec![]),
         }
     }
 }
