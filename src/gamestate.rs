@@ -207,7 +207,7 @@ impl GameState {
                 eprintln!("Waiting while cat in bag player is chosen");
             }
             State::CatInBagChoosingCost(..) => {
-                eprintln!("Waiting while cat in bag player is chosen");
+                eprintln!("Waiting while cat in bag cost is chosen");
             }
         }
     }
@@ -1164,7 +1164,7 @@ mod test {
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         match game_state.get_state() {
-            &State::Answering(_, _) => {
+            &State::Answering(..) => {
                 assert!(false);
             }
             _ => {}
@@ -1473,7 +1473,19 @@ mod test {
 
         // Right choice
         game_state.select_cat_in_bag_player(p1_id, "new_2".to_string());
-        assert!(matches!(game_state.get_state(), State::Answering(_, _)));
+        assert!(matches!(game_state.get_state(), State::CatInBagChoosingCost(_)));
+
+        // Select cost - wrong cost
+        game_state.select_cat_in_bag_cost(p2_id, 200);
+        assert!(matches!(game_state.get_state(), State::CatInBagChoosingCost(_)));
+        // Select cost - wrong user id
+        game_state.select_cat_in_bag_cost(p1_id, 500);
+        assert!(matches!(game_state.get_state(), State::CatInBagChoosingCost(_)));
+
+        // Select cost - right choice
+        game_state.select_cat_in_bag_cost(p2_id, 500);
+        assert!(matches!(game_state.get_state(), State::Answering(_, _, false)));
+
         assert_eq!(game_state.current_player.map(|x| x.id()), Some(p2_id));
     }
 }
