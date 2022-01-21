@@ -126,6 +126,7 @@ impl CsvQuestionsStorage {
             i += 1;
         }
 
+        eprintln!("Found {} cats in bags", cats_in_bags.len());
         Ok(Self {
             questions: questions_storage,
             tours,
@@ -136,7 +137,7 @@ impl CsvQuestionsStorage {
 
 fn check_if_cat_in_bag(question: String) -> Result<Option<(String, String)>, Error> {
     let question = question.trim();
-    let cat_in_bag_prefix = "Кот в мешке.";
+    let cat_in_bag_prefix = "КОТ В МЕШКЕ";
     if question.starts_with(cat_in_bag_prefix) {
         let question = question.trim_start_matches(cat_in_bag_prefix).trim();
         let topic_prefix = "Тема: ";
