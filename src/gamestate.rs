@@ -125,7 +125,6 @@ impl GameState {
         admin_user: UserId,
         questions_storage: &Box<dyn QuestionsStorage>,
         questions_per_topic: usize,
-        manual_questions: Vec<(String, usize)>,
     ) -> Result<Self, Error> {
         if questions_per_topic == 0 {
             return Err(err_msg(String::from("questions per topic can't be zero")));
@@ -145,6 +144,8 @@ impl GameState {
                 }
             }
         }
+
+        let manual_questions = questions_storage.get_manual_questions();
 
         Ok(Self {
             admin_user,

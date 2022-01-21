@@ -14,7 +14,6 @@ struct RawConfig {
     pub game_chat_id: Option<i64>,
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
-    pub manual_questions: Option<Vec<Question>>,
 }
 
 pub struct Config {
@@ -24,7 +23,6 @@ pub struct Config {
     pub game_chat: Option<telegram_bot::ChatId>,
     pub questions_storage_path: String,
     pub questions_per_topic: usize,
-    pub manual_questions: Vec<(String, usize)>,
 }
 
 const DEFAULT_ADMIN_ID: i64 = 125732128;
@@ -51,7 +49,6 @@ impl RawConfig {
                     game_chat_id: None,
                     questions_storage_path: "storage.csv".into(),
                     questions_per_topic: 5,
-                    manual_questions: None,
                 }
             }
         }
@@ -70,12 +67,6 @@ impl Config {
             game_chat: config.game_chat_id.map(telegram_bot::ChatId::from),
             questions_storage_path: config.questions_storage_path,
             questions_per_topic: config.questions_per_topic,
-            manual_questions: config
-                .manual_questions
-                .unwrap_or(vec![])
-                .into_iter()
-                .map(|question| (question.topic, question.cost))
-                .collect(),
         }
     }
 }

@@ -12,6 +12,8 @@ pub trait QuestionsStorage {
     fn get_tours(&self) -> Vec<TourDescription>;
 
     fn get_cats_in_bags(&self) -> Vec<CatInBag>;
+
+    fn get_manual_questions(&self) -> Vec<(String, usize)>;
 }
 
 #[derive(Clone)]
@@ -40,6 +42,7 @@ pub struct CsvQuestionsStorage {
     questions: HashMap<(String, usize), Question>,
     tours: Vec<TourDescription>,
     cats_in_bags: Vec<CatInBag>,
+    manual_questions: Vec<(String, usize)>,
 }
 
 impl CsvQuestionsStorage {
@@ -51,6 +54,7 @@ impl CsvQuestionsStorage {
 
         let mut tours = vec![];
         let mut cats_in_bags = vec![];
+        let mut manual_questions = vec![];
         let mut i = 1;
         loop {
             let multiplier = 100 * i;
@@ -108,6 +112,9 @@ impl CsvQuestionsStorage {
                             };
                             cats_in_bags.push(cat_in_bag);
                             Question::new(question, answer.to_string(), comment.map(|c| c.to_string()))
+                        } else if let Some(question) = check_if_manual(question.to_string())? {
+                            manual_questions.push((current_topic.clone(), current_difficulty * multiplier));
+                            Question::new(question, answer.to_string(), comment.map(|c| c.to_string()))
                         } else {
                             Question::new(question, &answer, comment)
                         };
@@ -127,10 +134,13 @@ impl CsvQuestionsStorage {
         }
 
         eprintln!("Found {} cats in bags", cats_in_bags.len());
+        eprintln!("Found {} in manual questions", manual_questions.len());
+
         Ok(Self {
             questions: questions_storage,
             tours,
             cats_in_bags,
+            manual_questions,
         })
     }
 }
@@ -158,6 +168,24 @@ fn check_if_cat_in_bag(question: String) -> Result<Option<(String, String)>, Err
     Ok(None)
 }
 
+fn check_if_manual(question: String) -> Result<Option<String>, Error> {
+    let question = question.trim();
+    let manual = "РУЧНОЙ";
+    let auction = "АУКЦИОН";
+
+    if question.starts_with(manual) {
+        let question = question.trim_start_matches(manual).trim();
+        return Ok(Some(question.to_string()));
+    }
+
+    if question.starts_with(auction) {
+        let question = question.trim_start_matches(auction).trim();
+        return Ok(Some(question.to_string()))
+    }
+
+    return Ok(None);
+}
+
 impl QuestionsStorage for CsvQuestionsStorage {
     fn get(&self, topic_name: String, difficulty: usize) -> Option<Question> {
         self.questions.get(&(topic_name, difficulty)).cloned()
@@ -169,5 +197,9 @@ impl QuestionsStorage for CsvQuestionsStorage {
 
     fn get_cats_in_bags(&self) -> Vec<CatInBag> {
         self.cats_in_bags.clone()
+    }
+
+    fn get_manual_questions(&self) -> Vec<(String, usize)> {
+        self.manual_questions.clone()
     }
 }
