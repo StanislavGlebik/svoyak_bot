@@ -975,14 +975,17 @@ impl GameState {
 mod test {
     use super::*;
     use crate::questionsstorage::QuestionsStorage;
-    use crate::telegram_config::Topic;
+    use crate::questionsstorage::Topic;
 
     pub struct FakeQuestionsStorage {
         questions: HashMap<(String, usize), Question>,
+        tours: Vec<TourDescription>,
+        cats_in_bags: Vec<CatInBag>,
+        manual_questions: Vec<(String, usize)>,
     }
 
     impl FakeQuestionsStorage {
-        pub fn new() -> Self {
+        pub fn new(tours: Vec<TourDescription>) -> Self {
             let mut question_storage = HashMap::new();
             question_storage.insert((String::from("Sport"), 1), Question::new("2 * 2 = ?", "4", None));
             question_storage.insert((String::from("Sport"), 2), Question::new("3 * 2 = ?", "6", None));
@@ -1004,6 +1007,9 @@ mod test {
 
             Self {
                 questions: question_storage,
+                tours,
+                cats_in_bags: vec![],
+                manual_questions: vec![],
             }
         }
     }
@@ -1012,10 +1018,21 @@ mod test {
         fn get(&self, topic_name: String, difficulty: usize) -> Option<Question> {
             self.questions.get(&(topic_name, difficulty)).cloned()
         }
+
+        fn get_tours(&self) -> Vec<TourDescription> {
+            self.tours.clone()
+        }
+
+        fn get_cats_in_bags(&self) -> Vec<CatInBag> {
+            self.cats_in_bags.clone()
+        }
+
+        fn get_manual_questions(&self) -> Vec<(String, usize)> {
+            self.manual_questions.clone()
+        }
     }
 
     fn create_game_state(user: UserId) -> (GameState, Box<dyn QuestionsStorage>) {
-        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![
             TourDescription {
                 multiplier: 100,
@@ -1030,7 +1047,8 @@ mod test {
                 }],
             },
         ];
-        (GameState::new(user, &questions_storage, 5, tours, vec![], vec![]).unwrap(), questions_storage)
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new(tours));
+        (GameState::new(user, &questions_storage, 5).unwrap(), questions_storage)
     }
 
     fn select_question<T: ToString>(
@@ -1141,20 +1159,20 @@ mod test {
     #[test]
     fn test_game_state_creation() {
         let admin = UserId::from(1);
-        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![TourDescription {
             multiplier: 100,
             topics: vec![Topic {
                 name: "Nonexisting topic".to_string(),
             }],
         }];
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new(tours.clone()));
 
         // 0 question number
-        assert!(GameState::new(admin, &questions_storage, 0, tours.clone(), vec![], vec![]).is_err());
+        assert!(GameState::new(admin, &questions_storage, 0).is_err());
 
         // Non existing topic
-        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
-        assert!(GameState::new(admin, &questions_storage, 5, tours, vec![], vec![]).is_err());
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new(tours.clone()));
+        assert!(GameState::new(admin, &questions_storage, 5).is_err());
 
         // Incorrect question number
         let tours = vec![TourDescription {
@@ -1164,8 +1182,8 @@ mod test {
             }],
         }];
 
-        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
-        assert!(GameState::new(admin, &questions_storage, 6, tours, vec![], vec![]).is_err());
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new(tours.clone()));
+        assert!(GameState::new(admin, &questions_storage, 6).is_err());
     }
 
     #[test]
@@ -1419,13 +1437,16 @@ mod test {
 
     #[test]
     fn test_manual_questions() {
-        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![TourDescription {
             multiplier: 100,
             topics: vec![Topic {
                 name: "Sport".to_string(),
             }],
         }];
+
+        let mut questions_storage = FakeQuestionsStorage::new(tours);
+        questions_storage.manual_questions = vec![("Sport".to_string(), 100)];
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(questions_storage);
 
         let admin_id = UserId::from(1);
         let p1_id = UserId::from(2);
@@ -1434,9 +1455,6 @@ mod test {
             admin_id,
             &questions_storage,
             5,
-            tours,
-            vec![("Sport".to_string(), 100)],
-            vec![],
         )
         .unwrap();
 
@@ -1458,13 +1476,24 @@ mod test {
 
     #[test]
     fn test_cats_in_bags_questions() {
-        let questions_storage: Box<dyn QuestionsStorage> = Box::new(FakeQuestionsStorage::new());
         let tours = vec![TourDescription {
             multiplier: 100,
             topics: vec![Topic {
                 name: "Sport".to_string(),
             }],
         }];
+        let mut questions_storage = FakeQuestionsStorage::new(tours);
+        questions_storage.cats_in_bags = vec![
+                CatInBag {
+                    old_topic: "Sport".to_string(),
+                    cost: 100,
+                    new_topic: "CatInBag".to_string(),
+                    question: "question".to_string(),
+                    answer: "answer".to_string(),
+                }
+            ];
+
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(questions_storage);
 
         let admin_id = UserId::from(1);
 
@@ -1472,18 +1501,6 @@ mod test {
             admin_id,
             &questions_storage,
             5,
-            tours,
-            vec![("Sport".to_string(), 100)],
-            vec![
-                CatInBag {
-                    old_topic: "Sport".to_string(),
-                    cost: 100,
-                    new_topic: "CatInBag".to_string(),
-                    question: "question".to_string(),
-                    answer: "answer".to_string(),
-                    comments: None,
-                }
-            ],
         )
         .unwrap();
 
