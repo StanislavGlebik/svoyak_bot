@@ -765,6 +765,7 @@ impl GameState {
                 self.set_state(State::Answering(question, cost as i64, false));
 
                 return vec![
+                    UiRequest::SendTextToMainChat(format!("Выбрана стоимость {}", cost)),
                     UiRequest::SendTextToMainChat(question_msg),
                     UiRequest::AskAdminYesNo("Correct answer?".to_string()),
                 ];
