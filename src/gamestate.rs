@@ -43,6 +43,7 @@ pub struct GameState {
     current_multiplier: usize,
     manual_questions: Vec<(String, usize)>,
     cats_in_bags: Vec<CatInBag>,
+    auctions: Vec<(String, usize)>,
 }
 
 pub enum UiRequest {
@@ -162,6 +163,7 @@ impl GameState {
             current_multiplier: 0,
             manual_questions,
             cats_in_bags: questions_storage.get_cats_in_bags(),
+            auctions: questions_storage.get_auctions(),
         })
     }
 
@@ -690,6 +692,14 @@ impl GameState {
                         UiRequest::SendTextToMainChat("Вопрос играется вручную".into()),
                     );
                     reply
+                } else if self.is_auction(&topic, &cost) {
+                    eprintln!("auction");
+                    self.set_state(State::Pause);
+                    let score = self.get_score_str();
+                    reply.push(
+                       UiRequest::SendTextToMainChat(format!("Аукцион!\n{}", score))
+                    );
+                    reply
                 } else {
                     eprintln!("automatic question");
                     self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
@@ -911,6 +921,13 @@ impl GameState {
 
     fn is_manual(&self, cur_topic: &String, cur_cost: &usize) -> bool {
         self.manual_questions
+            .iter()
+            .find(|&&(ref topic, ref cost)| cur_topic == topic && cur_cost == cost)
+            .is_some()
+    }
+
+    fn is_auction(&self, cur_topic: &String, cur_cost: &usize) -> bool {
+        self.auctions
             .iter()
             .find(|&&(ref topic, ref cost)| cur_topic == topic && cur_cost == cost)
             .is_some()
