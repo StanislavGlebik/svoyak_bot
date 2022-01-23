@@ -431,16 +431,17 @@ impl GameState {
         self.set_state(State::Pause);
         self.player_which_chose_question = None;
 
+        let mut msg = self.get_score_str();
         let current_player_name = match self.current_player {
             Some(ref player) => player.name(),
             None => panic!("Trying to process question, but no current player set"),
         };
-        let msg = format!("Игру продолжает {}", current_player_name);
+        msg += "\n";
+        msg += &format!("Игру продолжает {}", current_player_name);
 
         if let Some(reason_message) = reason {
             vec![
-                UiRequest::SendTextToMainChat(reason_message),
-                UiRequest::SendTextToMainChat(msg),
+                UiRequest::SendTextToMainChat(format!("{}\n{}", reason_message, msg))
             ]
         } else {
             vec![UiRequest::SendTextToMainChat(msg)]
@@ -778,11 +779,15 @@ impl GameState {
     }
 
     pub fn get_score(&mut self, _user: UserId) -> Vec<UiRequest> {
-        let mut res = String::new();
+        vec![UiRequest::SendTextToMainChat(self.get_score_str())]
+    }
+
+    pub fn get_score_str(&self) -> String {
+        let mut res = String::from("Счет:\n");
         for (player, score) in self.players.iter() {
             res += &format!("{}: {}\n", player.name(), score);
         }
-        vec![UiRequest::SendTextToMainChat(format!("{}", res))]
+        res
     }
 
     pub fn current_player(&mut self, _user: UserId) -> Vec<UiRequest> {
