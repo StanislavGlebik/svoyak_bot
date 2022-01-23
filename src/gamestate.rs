@@ -400,7 +400,7 @@ impl GameState {
             None => panic!("Trying to process question, but no current player set"),
         };
         let msg = match question.comments() {
-            Some(comments) => {
+            Some(comments) if comments.len() > 0 => {
                 format!(
                     "Правильный ответ: {}\nКомментарий:{}\nСледующий вопрос выбирает {}",
                     question.answer(),
@@ -408,7 +408,7 @@ impl GameState {
                     current_player_name
                 )
             }
-            None => {
+            _ => {
                 format!(
                     "Правильный ответ: {}\nСледующий вопрос выбирает {}",
                     question.answer(),
@@ -455,10 +455,10 @@ impl GameState {
         if let State::Answering(question, cost, _) = &self.state {
 
             let message = match question.comments() {
-                Some(comments) => {
+                Some(comments) if comments.len() > 0 => {
                     format!("{}\nКомментарий: {}", CORRECT_ANSWER, comments)
                 }
-                None => {
+                _ => {
                     String::from(CORRECT_ANSWER)
                 }
             };
@@ -920,7 +920,7 @@ impl GameState {
                         Question::new(
                             cat_in_bag.question.clone(),
                             cat_in_bag.answer.clone(),
-                            Some("".to_string()),
+                            None,
                         )
                     )
                 );
