@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::convert::TryInto;
 
 use serde_derive::Serialize;
 use telegram_bot::UserId;
@@ -19,6 +20,7 @@ enum State {
     BeforeQuestionAsked(Question, i64),
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
+    WaitingForAuction(Question),
     // question, cost, anyone can answer
     Answering(Question, i64, bool),
 
@@ -198,6 +200,9 @@ impl GameState {
             State::CanAnswer(_, _) => {
                 eprintln!("Now it is ok to answer the question");
             }
+            State::WaitingForAuction(_) => {
+                eprintln!("Waiting for an auction cost to be decided");
+            }
             State::Pause => {
                 eprintln!("The game is paused");
             }
@@ -211,6 +216,42 @@ impl GameState {
                 eprintln!("Waiting while cat in bag cost is chosen");
             }
         }
+    }
+
+    pub fn update_auction_cost(&mut self, maybe_admin: UserId, name: String, cost: usize) -> Vec<UiRequest> {
+        if maybe_admin != self.admin_user {
+            println!("non admin user attempted to update auction cost");
+            return vec![];
+        }
+
+        let question = match &self.state {
+            State::WaitingForAuction(question) => {
+                question.clone()
+            }
+            _ => {
+                eprintln!("Cannot update auction, wrong state");
+                return vec![];
+            }
+        };
+
+        if let Some(player) = self.find_player_by_name(&name) {
+            self.current_player = Some(player.clone());
+        } else {
+            eprintln!("user {} not found", name);
+            return vec![];
+        }
+
+        self.player_which_chose_question = self.current_player.clone();
+
+        // Only this player can answer
+        self.set_state(State::Answering(question.clone(), cost.try_into().unwrap(), false));
+
+        let question_msg = question.question();
+        vec![
+            UiRequest::SendTextToMainChat(format!("Играем аукцион с {}, стоимость {}", name, cost)),
+            UiRequest::SendTextToMainChat(question_msg),
+            UiRequest::AskAdminYesNo("Correct answer?".to_string()),
+        ]
     }
 
     pub fn add_player(&mut self, new_user: UserId, name: String) -> Vec<UiRequest> {
@@ -694,7 +735,7 @@ impl GameState {
                     reply
                 } else if self.is_auction(&topic, &cost) {
                     eprintln!("auction");
-                    self.set_state(State::Pause);
+                    self.set_state(State::WaitingForAuction(question.clone()));
                     let score = self.get_score_str();
                     reply.push(
                        UiRequest::SendTextToMainChat(format!("Аукцион!\n{}", score))

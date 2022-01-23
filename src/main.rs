@@ -186,6 +186,7 @@ enum TextMessage {
     NextTour,
     UpdateScore(String, i64),
     HideQuestion(String, usize),
+    UpdateAuctionCost(String, usize),
 }
 
 enum CallbackMessage {
@@ -222,6 +223,15 @@ fn parse_text_message(data: &String) -> TextMessage {
         let split: Vec<_> = data.splitn(2, ' ').collect();
         if split.len() == 2 {
             return TextMessage::ChangePlayer((*split.get(1).expect("should not happen")).to_string());
+        }
+    }
+
+    if data.starts_with("/auction") {
+        let split: Vec<_> = data.splitn(3, ' ').collect();
+        if split.len() == 3 {
+            if let Ok(cost) = split[2].parse() {
+                return TextMessage::UpdateAuctionCost(split[1].to_string(), cost);
+            }
         }
     }
 
@@ -409,6 +419,9 @@ fn main() -> Result<(), Error> {
                                     }
                                     TextMessage::HideQuestion(topic, cost) => {
                                         gamestate.hide_question(topic, cost, message.from.id)
+                                    }
+                                    TextMessage::UpdateAuctionCost(user, cost) => {
+                                        gamestate.update_auction_cost(message.from.id, user, cost)
                                     }
                                 }
                             } else {
