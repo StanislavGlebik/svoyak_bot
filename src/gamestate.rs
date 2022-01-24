@@ -522,12 +522,13 @@ impl GameState {
         }
         if let State::Answering(question, cost, _) = &self.state {
             let cost = *cost;
+            let correct_answer = get_rand_correct_answer();
             let message = match question.comments() {
                 Some(comments) if comments.len() > 0 => {
-                    format!("{}\nКомментарий: {}", CORRECT_ANSWER, comments)
+                    format!("{}\nКомментарий: {}", correct_answer, comments)
                 }
                 _ => {
-                    String::from(CORRECT_ANSWER)
+                    String::from(correct_answer)
                 }
             };
 
