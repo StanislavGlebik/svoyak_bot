@@ -1,8 +1,11 @@
+use std::path::PathBuf;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Question {
     question: String,
     answer: String,
     comments: Option<String>,
+    image: Option<PathBuf>,
 }
 
 impl Question {
@@ -11,6 +14,7 @@ impl Question {
             question: question.to_string(),
             answer: answer.to_string(),
             comments: comments.map(|s| s.to_string()),
+            image: None,
         }
     }
 
@@ -24,5 +28,13 @@ impl Question {
 
     pub fn comments(&self) -> &Option<String> {
         &self.comments
+    }
+
+    pub fn image(&self) -> &Option<PathBuf> {
+        &self.image
+    }
+
+    pub fn set_image(&mut self, path: PathBuf) {
+        self.image = Some(path);
     }
 }

@@ -368,9 +368,13 @@ fn main() -> Result<(), Error> {
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
 
     eprintln!("Game is ready to start!");
-    let question_storage: Box<dyn QuestionsStorage> = Box::new(CsvQuestionsStorage::new(
-        config.questions_storage_path.clone(),
-    )?);
+    let question_storage = runtime.block_on_std(
+        CsvQuestionsStorage::new(
+            config.questions_storage_path.clone(),
+        )
+    )?;
+    let question_storage: Box<dyn QuestionsStorage> = Box::new(question_storage);
+
     eprintln!("loaded questions");
     let mut gamestate = gamestate::GameState::new(
         config.admin_user,
@@ -465,6 +469,12 @@ fn main() -> Result<(), Error> {
                         let mut msg = SendMessage::new(game_chat, msg);
                         msg.parse_mode(ParseMode::Html);
                         api.send(msg).await?;
+                    }
+                    gamestate::UiRequest::SendImage(image) => {
+                        let r = send_photo_via_curl(game_chat, &config.token, &image.to_string_lossy());
+                        if let Err(e) = r {
+                            eprintln!("was not able to send image {}!", e);
+                        }
                     }
                     gamestate::UiRequest::Timeout(msg, delay) => {
                         let duration = match delay {

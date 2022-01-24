@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::convert::TryInto;
+use std::path::PathBuf;
 
 use serde_derive::Serialize;
 use telegram_bot::UserId;
@@ -51,6 +52,7 @@ pub struct GameState {
 pub enum UiRequest {
     SendTextToMainChat(String),
     SendHtmlToMainChat(String),
+    SendImage(PathBuf),
     Timeout(Option<String>, Delay),
     ChooseTopic(String, Vec<String>),
     ChooseQuestion(String, Vec<usize>),
@@ -246,12 +248,22 @@ impl GameState {
         // Only this player can answer
         self.set_state(State::Answering(question.clone(), cost.try_into().unwrap(), false));
 
-        let question_msg = question.question();
-        vec![
+        let mut res = vec![
             UiRequest::SendTextToMainChat(format!("Играем аукцион с {}, стоимость {}", name, cost)),
-            UiRequest::SendTextToMainChat(question_msg),
-            UiRequest::AskAdminYesNo("Correct answer?".to_string()),
-        ]
+        ];
+        res.extend(self.format_question(&question));
+        res.push(UiRequest::AskAdminYesNo("Correct answer?".to_string()));
+        res
+    }
+
+    fn format_question(&self, question: &Question) -> Vec<UiRequest> {
+        let mut res = vec![];
+        if let Some(image) = question.image() {
+            res.push(UiRequest::SendImage(image.to_path_buf()));
+        }
+        let question_msg = question.question();
+        res.push(UiRequest::SendTextToMainChat(question_msg));
+        res
     }
 
     pub fn add_player(&mut self, new_user: UserId, name: String) -> Vec<UiRequest> {
@@ -438,27 +450,20 @@ impl GameState {
         // asked the question (http://vladimirkhil.com/tv/game/10)
         self.current_player = self.player_which_chose_question.clone();
 
+        let score_msg = self.get_score_str();
         let current_player_name = match self.current_player {
             Some(ref player) => player.name(),
             None => panic!("Trying to process question, but no current player set"),
         };
-        let msg = match question.comments() {
-            Some(comments) if comments.len() > 0 => {
-                format!(
-                    "Правильный ответ: {}\nКомментарий:{}\nСледующий вопрос выбирает {}",
-                    question.answer(),
-                    comments,
-                    current_player_name
-                )
+
+        let mut msg = format!("Правильный ответ: {}\n", question.answer());
+        if let Some(comments) = question.comments() {
+            if comments.len() > 0 {
+                msg.push_str(&format!("Комментарий:{}\n", comments));
             }
-            _ => {
-                format!(
-                    "Правильный ответ: {}\nСледующий вопрос выбирает {}",
-                    question.answer(),
-                    current_player_name
-                )
-            }
-        };
+        }
+
+        msg.push_str(&format!("{}\nСледующий вопрос выбирает {}", score_msg, current_player_name));
 
         if let Some(reason_message) = reason {
             vec![
@@ -586,7 +591,9 @@ impl GameState {
             eprintln!("Falsestart section is about to start");
             self.set_state(State::Falsestart(question.clone(), cost));
 
-            let delay = if question.question().len() <= 100 {
+            let delay = if question.image().is_some() {
+                Delay::Long
+            } else if question.question().len() <= 100 {
                 Delay::Short
             } else if question.question().len() <= 230 {
                 Delay::Medium
@@ -594,10 +601,10 @@ impl GameState {
                 Delay::Long
             };
 
-            return vec![
-                UiRequest::SendTextToMainChat(question.question()),
-                UiRequest::Timeout(Some("!".into()), delay),
-            ];
+            let mut res = vec![];
+            res.extend(self.format_question(&question));
+            res.push(UiRequest::Timeout(Some("!".into()), delay));
+            return res;
         }
 
         if let State::Falsestart(question, cost) = self.state.clone() {
@@ -812,15 +819,15 @@ impl GameState {
                     return vec![];
                 }
 
-                let question_msg = question.question();
                 // Only one person can answer
-                self.set_state(State::Answering(question, cost as i64, false));
+                self.set_state(State::Answering(question.clone(), cost as i64, false));
 
-                return vec![
+                let mut res = vec![
                     UiRequest::SendTextToMainChat(format!("Выбрана стоимость {}", cost)),
-                    UiRequest::SendTextToMainChat(question_msg),
-                    UiRequest::AskAdminYesNo("Correct answer?".to_string()),
                 ];
+                res.extend(self.format_question(&question));
+                res.push(UiRequest::AskAdminYesNo("Correct answer?".to_string()));
+                res
             }
             _ => {
                 eprintln!("not in cat in bag");

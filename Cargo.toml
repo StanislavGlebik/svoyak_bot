@@ -10,6 +10,8 @@ failure = "*"
 futures_03 = { version = "0.3.7", package = "futures", features=["compat"] }
 futures = { version = "0.1.*" }
 futures-cpupool = "*"
+hyper = "*"
+hyper-tls = "*"
 telegram-bot = { git = "https://github.com/ayrat555/telegram-bot", branch = "ayrat555/api-fixes-10" }
 tokio = "0.1.*"
 tokio-compat = "*"

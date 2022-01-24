@@ -1,7 +1,11 @@
 use csv;
 use failure::{err_msg, Error};
+use hyper::Client;
+use hyper_tls::HttpsConnector;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use crate::question::Question;
@@ -50,7 +54,7 @@ pub struct CsvQuestionsStorage {
 
 impl CsvQuestionsStorage {
     // TODO(stash): skip header
-    pub fn new<P: AsRef<Path>>(p: P) -> Result<Self, Error> {
+    pub async fn new<P: AsRef<Path>>(p: P) -> Result<Self, Error> {
         let dir = p.as_ref();
         eprintln!("{:?}", dir);
         let mut questions_storage = HashMap::new();
@@ -79,15 +83,27 @@ impl CsvQuestionsStorage {
 
             for r in reader.records() {
                 let record = r?;
-                if record.len() < 4 {
+                if record.len() < 5 {
                     let msg = format!("incorrect number of field: {} < 4", record.len());
                     return Err(err_msg(msg));
                 }
                 let topic = record.get(0).unwrap().to_string();
                 // second field is cost, we ignore it here
-                let question = record.get(2).unwrap();
-                let answer = record.get(3).unwrap();
-                let comment = record.get(4);
+                let mut image = None;
+                let uri = record.get(2).unwrap();
+                if !uri.is_empty() {
+                    let bytes = download_url(uri).await?;
+                    let mut s = DefaultHasher::new();
+                    bytes.hash(&mut s);
+                    let filename = format!("{}", s.finish());
+                    eprintln!("downloaded {}", bytes.len());
+                    std::fs::write(filename.clone(), bytes)?;
+                    eprintln!("written to {}", filename);
+                    image = Some(std::path::PathBuf::from(filename));
+                }
+                let question = record.get(3).unwrap();
+                let answer = record.get(4).unwrap();
+                let comment = record.get(5);
                 let comment = if comment == Some(&"".to_string()) {
                     None
                 } else {
@@ -106,7 +122,7 @@ impl CsvQuestionsStorage {
                 match current_topic {
                     Some(ref current_topic) => {
 
-                        let question = if let Some((cat_in_bag_topic, question)) = check_if_cat_in_bag(question.to_string())? {
+                        let mut question = if let Some((cat_in_bag_topic, question)) = check_if_cat_in_bag(question.to_string())? {
                             let cat_in_bag = CatInBag {
                                 old_topic: current_topic.clone(),
                                 cost: current_difficulty * multiplier,
@@ -125,6 +141,9 @@ impl CsvQuestionsStorage {
                         } else {
                             Question::new(question, &answer, comment)
                         };
+                        if let Some(image) = image {
+                            question.set_image(image);
+                        }
                         questions_storage.insert((current_topic.clone(), current_difficulty), question);
                     }
                     None => {
@@ -152,6 +171,30 @@ impl CsvQuestionsStorage {
             auctions,
         })
     }
+}
+
+async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
+    let https = HttpsConnector::new();
+    let client = Client::builder().build::<_, hyper::Body>(https);
+    let uri = uri.parse()?;
+    let mut resp = client.get(uri).await?;
+    let mut status = resp.status();
+
+    if status == hyper::StatusCode::FOUND {
+        let uri = resp.headers().get("Location")
+            .ok_or_else(|| err_msg("no location after redirect"))?
+            .to_str()?;
+        let uri = uri.parse()?;
+        resp = client.get(uri).await?;
+        status = resp.status();
+    }
+
+    if status != hyper::StatusCode::OK {
+        return Err(err_msg(format!("failed with error code {}", status)));
+    }
+    let bytes = hyper::body::to_bytes(resp.into_body()).await?;
+
+    Ok(bytes)
 }
 
 fn check_if_cat_in_bag(question: String) -> Result<Option<(String, String)>, Error> {
