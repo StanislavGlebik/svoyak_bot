@@ -721,7 +721,8 @@ impl GameState {
                     question.answer(),
                 ))
             );
-            reply.push(UiRequest::SendTextToMainChat("Кот в мешке!".into()));
+            let score = self.get_score_str() ;
+            reply.push(UiRequest::SendTextToMainChat(format!("Кот в мешке!\n{}", score)));
             reply.push(
                 UiRequest::CatInBagChoosePlayer(
                     self.players
