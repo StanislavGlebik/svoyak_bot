@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::convert::TryInto;
 use std::path::PathBuf;
 
+use itertools::Itertools;
 use serde_derive::Serialize;
 use telegram_bot::UserId;
 
@@ -322,8 +323,14 @@ impl GameState {
             //     }
             // }
 
+            let topics: String = self
+                .questions
+                .iter()
+                .map(|(topic, _)| topic)
+                .join("\n");
             vec![
                 UiRequest::SendTextToMainChat(format!("Здравствуйте, здравствуйте, добрый день! Это своя игра!")),
+                UiRequest::SendTextToMainChat(format!("Темы первого раунда:\n{}", topics)),
                 // UiRequest::SendHtmlToMainChat(topics),
                 UiRequest::SendTextToMainChat(format!(
                     "Игру начинает {}",
@@ -347,8 +354,14 @@ impl GameState {
 
         self.current_tour += 1;
         self.reload_available_questions();
+
+        let topics: String = self
+            .questions
+            .iter()
+            .map(|(topic, _)| topic)
+            .join("\n");
         vec![UiRequest::SendTextToMainChat(
-            "Переходим к следующему туру".to_string(),
+            format!("Переходим к следующему туру\n\nТемы:\n{}", topics),
         )]
     }
 

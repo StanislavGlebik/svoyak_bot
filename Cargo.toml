@@ -12,6 +12,7 @@ futures = { version = "0.1.*" }
 futures-cpupool = "*"
 hyper = "*"
 hyper-tls = "*"
+itertools = "*"
 rand = "*"
 telegram-bot = { git = "https://github.com/ayrat555/telegram-bot", branch = "ayrat555/api-fixes-10" }
 tokio = "0.1.*"
