@@ -750,8 +750,9 @@ impl GameState {
                 if self.is_manual(&topic, &cost) {
                     eprintln!("manual question");
                     self.set_state(State::Pause);
+                    let score = self.get_score_str();
                     reply.push(
-                        UiRequest::SendTextToMainChat("Вопрос играется вручную".into()),
+                        UiRequest::SendTextToMainChat(format!("Вопрос играется вручную\n{}", score)),
                     );
                     reply
                 } else if self.is_auction(&topic, &cost) {
