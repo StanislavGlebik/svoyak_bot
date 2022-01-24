@@ -621,13 +621,28 @@ impl GameState {
         }
 
         if let State::Falsestart(question, cost) = self.state.clone() {
-            eprintln!("Falsestart section if finished, accepting answer now");
+            eprintln!("Falsestart section is finished, accepting answers now");
             self.set_state(State::CanAnswer(question.clone(), cost));
-            return vec![UiRequest::Timeout(None, Delay::Long)];
+            if !self.players_falsestarted.is_empty() {
+                // If we have falsestarted players then first set a timer that clears
+                // False start for them.
+                return vec![UiRequest::Timeout(None, Delay::Short)];
+            } else {
+                return vec![UiRequest::Timeout(None, Delay::Long)];
+            }
         };
 
         if let State::CanAnswer(question, _) = self.state.clone() {
-            self.close_unanswered_question(question, Some(String::from("Время на ответ вышло!")))
+            if !self.players_falsestarted.is_empty() {
+                // False started people can answer now
+                self.players_falsestarted.clear();
+                vec![
+                    UiRequest::SendTextToMainChat("Фальшстарт окончен".to_string()),
+                    UiRequest::Timeout(None, Delay::Long)
+                ]
+            } else {
+                self.close_unanswered_question(question, Some(String::from("Время на ответ вышло!")))
+            }
         } else {
             eprintln!("unexpected timeout");
             vec![]
@@ -1315,6 +1330,26 @@ mod test {
             }
             _ => {}
         }
+    }
+
+    #[test]
+    fn test_falsestarts_reset() {
+        let admin = UserId::from(1);
+        let p1 = UserId::from(2);
+        let (mut game_state, questions_storage) = create_game_state(admin);
+        game_state.add_player(p1, String::from("new_1"));
+        game_state.start(admin);
+        game_state.next_question(admin);
+
+        game_state.select_topic("Sport", p1);
+        game_state.select_question("Sport", 200, p1, &questions_storage);
+        game_state.timeout();
+        game_state.message(p1, String::from("1"));
+        game_state.timeout();
+        // Falsestart is over, now can answer
+        game_state.timeout();
+        game_state.message(p1, String::from("1"));
+        matches!(game_state.get_state(), State::Answering(..));
     }
 
     #[test]
