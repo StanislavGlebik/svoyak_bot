@@ -69,6 +69,7 @@ pub enum Delay {
     Short,
     Medium,
     Long,
+    ExtraLong,
 }
 
 #[derive(Serialize)]
@@ -597,6 +598,8 @@ impl GameState {
 
             let delay = if question.image().is_some() {
                 Delay::Long
+            } else if question.audio().is_some() {
+                Delay::ExtraLong
             } else if question.question().len() <= 100 {
                 Delay::Short
             } else if question.question().len() <= 230 {

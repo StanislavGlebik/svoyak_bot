@@ -508,6 +508,7 @@ fn main() -> Result<(), Error> {
                             gamestate::Delay::Short => Duration::new(3, 0),
                             gamestate::Delay::Medium => Duration::new(5, 0),
                             gamestate::Delay::Long => Duration::new(10, 0),
+                            gamestate::Delay::ExtraLong => Duration::new(15, 0),
                         };
 
                         let when = Instant::now() + duration;
