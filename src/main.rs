@@ -381,6 +381,14 @@ fn main() -> Result<(), Error> {
         }
     };
 
+    runtime.block_on_std(
+        async {
+            let msg = SendMessage::new(game_chat, "Для регистрации в игре введите '/join ИМЯ' без кавычек".to_string());
+            api.send(msg).await?;
+            Result::<_, Error>::Ok(())
+        }
+    )?;
+
     // Fetch new updates via long poll method
     let (sender, receiver) = mpsc::channel::<Option<Box<dyn Future<Item = (), Error = Error>>>>(1);
 
