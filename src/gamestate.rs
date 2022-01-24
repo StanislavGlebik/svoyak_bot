@@ -350,8 +350,14 @@ impl GameState {
         )]
     }
 
-    pub fn message(&mut self, user: UserId, _message: String) -> Vec<UiRequest> {
-        eprintln!("User {} sent a message '{}'", user, _message);
+    pub fn message(&mut self, user: UserId, message: String) -> Vec<UiRequest> {
+        eprintln!("User {} sent a message '{}'", user, message);
+
+        // Only messages of up to 3 symbols are considered a "press of a button"
+        if message.len() > 3 {
+            return vec![];
+        }
+
         if let State::Falsestart(_, _) = self.state.clone() {
             let player = self.find_player(user).cloned();
             match player {
