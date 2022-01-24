@@ -6,6 +6,7 @@ pub struct Question {
     answer: String,
     comments: Option<String>,
     image: Option<PathBuf>,
+    audio: Option<PathBuf>,
 }
 
 impl Question {
@@ -15,6 +16,7 @@ impl Question {
             answer: answer.to_string(),
             comments: comments.map(|s| s.to_string()),
             image: None,
+            audio: None,
         }
     }
 
@@ -34,7 +36,15 @@ impl Question {
         &self.image
     }
 
+    pub fn audio(&self) -> &Option<PathBuf> {
+        &self.audio
+    }
+
     pub fn set_image(&mut self, path: PathBuf) {
         self.image = Some(path);
+    }
+
+    pub fn set_audio(&mut self, path: PathBuf) {
+        self.audio = Some(path);
     }
 }

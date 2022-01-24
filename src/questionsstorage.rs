@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::question::Question;
 
@@ -89,18 +89,12 @@ impl CsvQuestionsStorage {
                 }
                 let topic = record.get(0).unwrap().to_string();
                 // second field is cost, we ignore it here
-                let mut image = None;
-                let uri = record.get(2).unwrap();
-                if !uri.is_empty() {
-                    let bytes = download_url(uri).await?;
-                    let mut s = DefaultHasher::new();
-                    bytes.hash(&mut s);
-                    let filename = format!("{}", s.finish());
-                    eprintln!("downloaded {}", bytes.len());
-                    std::fs::write(filename.clone(), bytes)?;
-                    eprintln!("written to {}", filename);
-                    image = Some(std::path::PathBuf::from(filename));
-                }
+                let attachment = record.get(2).unwrap();
+                let (image, audio) = if !attachment.is_empty() {
+                    parse_attachment(attachment).await?
+                } else {
+                    (None, None)
+                };
                 let question = record.get(3).unwrap();
                 let answer = record.get(4).unwrap();
                 let comment = record.get(5);
@@ -144,6 +138,9 @@ impl CsvQuestionsStorage {
                         if let Some(image) = image {
                             question.set_image(image);
                         }
+                        if let Some(audio) = audio {
+                            question.set_audio(audio);
+                        }
                         questions_storage.insert((current_topic.clone(), current_difficulty), question);
                     }
                     None => {
@@ -170,6 +167,32 @@ impl CsvQuestionsStorage {
             manual_questions,
             auctions,
         })
+    }
+}
+
+async fn parse_attachment(attachment: &str) -> Result<(Option<PathBuf>, Option<PathBuf>), Error> {
+    let split = attachment.splitn(2, " ").collect::<Vec<_>>();
+    if split.len() != 2 {
+        return Err(err_msg(format!("invalid attachment {}", attachment)));
+    }
+
+    let ty = split[0];
+    let uri = split[1];
+
+    let bytes = download_url(uri).await?;
+    let mut s = DefaultHasher::new();
+    bytes.hash(&mut s);
+    let filename = format!("{}", s.finish());
+    eprintln!("downloaded {}", bytes.len());
+    std::fs::write(filename.clone(), bytes)?;
+    eprintln!("written to {}", filename);
+
+    if ty == "image" {
+        Ok((Some(filename.into()), None))
+    } else if ty == "audio" {
+        Ok((None, Some(filename.into())))
+    } else {
+        Err(err_msg(format!("invalid attachment type {}", ty)))
     }
 }
 

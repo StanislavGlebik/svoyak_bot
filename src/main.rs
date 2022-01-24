@@ -101,6 +101,27 @@ fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result
     }
 }
 
+fn send_audio_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result<(), Error> {
+    let status = Command::new("curl")
+        .arg("-F")
+        .arg(format!("chat_id={}", game_chat))
+        .arg("-F")
+        .arg(format!("audio=@{}", filename))
+        .arg(format!("https://api.telegram.org/bot{}/sendAudio", token))
+        .status()
+        .map_err(|error| {
+            err_msg(format!(
+                "Can't execute curl to send score table ({:?})",
+                error
+            ))
+        })?;
+    if !status.success() {
+        Err(err_msg("Curl sending score table finished unsucessfully"))
+    } else {
+        Ok(())
+    }
+}
+
 fn send_score_table(
     table: gamestate::ScoreTable,
     game_chat: ChatId,
@@ -474,6 +495,12 @@ fn main() -> Result<(), Error> {
                         let r = send_photo_via_curl(game_chat, &config.token, &image.to_string_lossy());
                         if let Err(e) = r {
                             eprintln!("was not able to send image {}!", e);
+                        }
+                    }
+                    gamestate::UiRequest::SendAudio(audio) => {
+                        let r = send_audio_via_curl(game_chat, &config.token, &audio.to_string_lossy());
+                        if let Err(e) = r {
+                            eprintln!("was not able to send audio {}!", e);
                         }
                     }
                     gamestate::UiRequest::Timeout(msg, delay) => {

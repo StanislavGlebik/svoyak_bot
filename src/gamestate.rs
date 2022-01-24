@@ -53,6 +53,7 @@ pub enum UiRequest {
     SendTextToMainChat(String),
     SendHtmlToMainChat(String),
     SendImage(PathBuf),
+    SendAudio(PathBuf),
     Timeout(Option<String>, Delay),
     ChooseTopic(String, Vec<String>),
     ChooseQuestion(String, Vec<usize>),
@@ -260,6 +261,9 @@ impl GameState {
         let mut res = vec![];
         if let Some(image) = question.image() {
             res.push(UiRequest::SendImage(image.to_path_buf()));
+        }
+        if let Some(audio) = question.audio() {
+            res.push(UiRequest::SendAudio(audio.to_path_buf()));
         }
         let question_msg = question.question();
         res.push(UiRequest::SendTextToMainChat(question_msg));
