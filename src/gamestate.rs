@@ -10,6 +10,7 @@ use failure::{err_msg, Error};
 
 use crate::messages::*;
 use crate::player::Player;
+use crate::stickers::get_rand_sticker;
 use crate::question::Question;
 use crate::questionsstorage::{CatInBag, TourDescription, QuestionsStorage};
 
@@ -52,6 +53,7 @@ pub struct GameState {
 pub enum UiRequest {
     SendTextToMainChat(String),
     SendHtmlToMainChat(String),
+    SendSticker(String),
     SendImage(PathBuf),
     SendAudio(PathBuf),
     Timeout(Option<String>, Delay),
@@ -486,7 +488,7 @@ impl GameState {
         }
     }
 
-    fn close_answered_question(&mut self, reason: Option<String>) -> Vec<UiRequest> {
+    fn close_answered_question(&mut self, reason: Option<String>, send_sticker: bool) -> Vec<UiRequest> {
         self.set_state(State::Pause);
         self.player_which_chose_question = None;
 
@@ -498,13 +500,19 @@ impl GameState {
         msg += "\n";
         msg += &format!("Игру продолжает {}", current_player_name);
 
-        if let Some(reason_message) = reason {
-            vec![
-                UiRequest::SendTextToMainChat(format!("{}\n{}", reason_message, msg))
-            ]
-        } else {
-            vec![UiRequest::SendTextToMainChat(msg)]
+        let mut res = vec![];
+        if send_sticker {
+            res.extend(get_rand_sticker().map(UiRequest::SendSticker));
         }
+
+        if let Some(reason_message) = reason {
+            res.push(
+                UiRequest::SendTextToMainChat(format!("{}\n{}", reason_message, msg))
+            );
+        } else {
+            res.push(UiRequest::SendTextToMainChat(msg));
+        }
+        res
     }
 
     pub fn yes_reply(&mut self, user: UserId) -> Vec<UiRequest> {
@@ -513,7 +521,7 @@ impl GameState {
             return vec![];
         }
         if let State::Answering(question, cost, _) = &self.state {
-
+            let cost = *cost;
             let message = match question.comments() {
                 Some(comments) if comments.len() > 0 => {
                     format!("{}\nКомментарий: {}", CORRECT_ANSWER, comments)
@@ -522,8 +530,13 @@ impl GameState {
                     String::from(CORRECT_ANSWER)
                 }
             };
-            let res = match self.update_current_player_score(*cost) {
-                Ok(_) => self.close_answered_question(Some(message)),
+
+
+            let res = match self.update_current_player_score(cost) {
+                Ok(_) => {
+                    let send_sticker = (cost / self.current_multiplier as i64) == 5;
+                    self.close_answered_question(Some(message), send_sticker)
+                },
                 Err(err_msg) => {
                     println!("{}", err_msg);
                     vec![]

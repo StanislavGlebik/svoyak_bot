@@ -23,6 +23,7 @@ mod messages;
 mod player;
 mod question;
 mod questionsstorage;
+mod stickers;
 mod telegram_config;
 mod timeout_stream;
 
@@ -112,6 +113,27 @@ fn send_audio_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result
         .map_err(|error| {
             err_msg(format!(
                 "Can't execute curl to send score table ({:?})",
+                error
+            ))
+        })?;
+    if !status.success() {
+        Err(err_msg("Curl sending score table finished unsucessfully"))
+    } else {
+        Ok(())
+    }
+}
+
+fn send_sticker_via_curl(game_chat: ChatId, token: &str, file_id: &str) -> Result<(), Error> {
+    let status = Command::new("curl")
+        .arg("-F")
+        .arg(format!("chat_id={}", game_chat))
+        .arg("-F")
+        .arg(format!("sticker={}", file_id))
+        .arg(format!("https://api.telegram.org/bot{}/sendSticker", token))
+        .status()
+        .map_err(|error| {
+            err_msg(format!(
+                "Can't execute curl to send sticker ({:?})",
                 error
             ))
         })?;
@@ -457,6 +479,9 @@ fn main() -> Result<(), Error> {
                                         gamestate.update_auction_cost(message.from.id, user, cost)
                                     }
                                 }
+                            } else if let  MessageKind::Sticker { ref data } = message.kind {
+                                eprintln!("sticker: {}", data.file_id);
+                                vec![]
                             } else {
                                 vec![]
                             }
@@ -498,6 +523,12 @@ fn main() -> Result<(), Error> {
                         let mut msg = SendMessage::new(game_chat, msg);
                         msg.parse_mode(ParseMode::Html);
                         api.send(msg).await?;
+                    }
+                    gamestate::UiRequest::SendSticker(sticker) => {
+                        let r = send_sticker_via_curl(game_chat, &config.token, &sticker);
+                        if let Err(e) = r {
+                            eprintln!("was not able to send sticker {}!", e);
+                        }
                     }
                     gamestate::UiRequest::SendImage(image) => {
                         let r = send_photo_via_curl(game_chat, &config.token, &image.to_string_lossy());
