@@ -1045,6 +1045,7 @@ mod test {
         tours: Vec<TourDescription>,
         cats_in_bags: Vec<CatInBag>,
         manual_questions: Vec<(String, usize)>,
+        auctions: Vec<(String, usize)>,
     }
 
     impl FakeQuestionsStorage {
@@ -1073,6 +1074,7 @@ mod test {
                 tours,
                 cats_in_bags: vec![],
                 manual_questions: vec![],
+                auctions: vec![],
             }
         }
     }
@@ -1092,6 +1094,10 @@ mod test {
 
         fn get_manual_questions(&self) -> Vec<(String, usize)> {
             self.manual_questions.clone()
+        }
+
+        fn get_auctions(&self) -> Vec<(String, usize)> {
+            self.auctions.clone()
         }
     }
 
@@ -1604,5 +1610,49 @@ mod test {
         assert!(matches!(game_state.get_state(), State::Answering(_, _, false)));
 
         assert_eq!(game_state.current_player.map(|x| x.id()), Some(p2_id));
+    }
+
+    #[test]
+    fn test_auctions() {
+        let tours = vec![TourDescription {
+            multiplier: 100,
+            topics: vec![Topic {
+                name: "Sport".to_string(),
+            }],
+        }];
+        let mut questions_storage = FakeQuestionsStorage::new(tours);
+        questions_storage.auctions = vec![("Sport".to_string(), 100)];
+
+        let questions_storage: Box<dyn QuestionsStorage> = Box::new(questions_storage);
+
+        let admin_id = UserId::from(1);
+
+        let mut game_state = GameState::new(
+            admin_id,
+            &questions_storage,
+            5,
+        )
+        .unwrap();
+
+        let p1_id = UserId::from(2);
+        let p2_id = UserId::from(3);
+        game_state.add_player(p1_id, String::from("new_1"));
+        game_state.add_player(p2_id, String::from("new_2"));
+        game_state.start(admin_id);
+
+        game_state.next_question(admin_id);
+        game_state.set_current_player(p1_id).unwrap();
+        game_state.select_topic("Sport", p1_id);
+        game_state.select_question("Sport", 100, p1_id, &questions_storage);
+
+        assert!(matches!(game_state.get_state(), State::WaitingForAuction(_)));
+
+        // non-admin user
+        game_state.update_auction_cost(p1_id, "new_1".to_string(), 100);
+        assert!(matches!(game_state.get_state(), State::WaitingForAuction(_)));
+
+        game_state.update_auction_cost(admin_id, "new_1".to_string(), 100);
+        assert!(matches!(game_state.get_state(), State::Answering(_, _, _)));
+        assert_eq!(game_state.get_current_player().map(|p| p.id()), Some(p1_id));
     }
 }
