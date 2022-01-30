@@ -23,7 +23,7 @@ enum State {
     BeforeQuestionAsked(Question, i64),
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
-    WaitingForAuction(Question),
+    WaitingForAuction(String, Question),
     // question, cost, anyone can answer
     Answering(Question, i64, bool),
 
@@ -209,7 +209,7 @@ impl GameState {
             State::CanAnswer(_, _) => {
                 eprintln!("Now it is ok to answer the question");
             }
-            State::WaitingForAuction(_) => {
+            State::WaitingForAuction(..) => {
                 eprintln!("Waiting for an auction cost to be decided");
             }
             State::Pause => {
@@ -233,9 +233,9 @@ impl GameState {
             return vec![];
         }
 
-        let question = match &self.state {
-            State::WaitingForAuction(question) => {
-                question.clone()
+        let (topic, question) = match &self.state {
+            State::WaitingForAuction(topic, question) => {
+                (topic.clone(), question.clone())
             }
             _ => {
                 eprintln!("Cannot update auction, wrong state");
@@ -256,7 +256,7 @@ impl GameState {
         self.set_state(State::Answering(question.clone(), cost.try_into().unwrap(), false));
 
         let mut res = vec![
-            UiRequest::SendTextToMainChat(format!("Играем аукцион с {}, стоимость {}", name, cost)),
+            UiRequest::SendTextToMainChat(format!("Играем аукцион с {}, тема {}, стоимость {}", name, topic, cost)),
         ];
         res.extend(self.format_question(&question));
         res.push(UiRequest::AskAdminYesNo("Correct answer?".to_string()));
@@ -797,7 +797,7 @@ impl GameState {
                     reply
                 } else if self.is_auction(&topic, &cost) {
                     eprintln!("auction");
-                    self.set_state(State::WaitingForAuction(question.clone()));
+                    self.set_state(State::WaitingForAuction(topic.clone(), question.clone()));
                     let score = self.get_score_str();
                     reply.push(
                        UiRequest::SendTextToMainChat(format!("Аукцион!\n{}", score))
