@@ -455,17 +455,23 @@ impl GameState {
             }
         };
 
-        self.set_state(State::WaitingForTopic);
         let topics: Vec<_> = self
             .questions
             .iter()
             .filter(|&(_, costs)| !costs.is_empty())
             .map(|(topic, _)| topic.clone())
             .collect();
-        vec![
-            UiRequest::SendScoreTable(self.make_score_table()),
-            UiRequest::ChooseTopic(current_player_name, topics),
-        ]
+        if topics.is_empty() {
+            vec![
+                UiRequest::SendTextToMainChat("Нет больше вопросов в туре".to_string()),
+            ]
+        } else {
+            self.set_state(State::WaitingForTopic);
+            vec![
+                UiRequest::SendScoreTable(self.make_score_table()),
+                UiRequest::ChooseTopic(current_player_name, topics),
+            ]
+        }
     }
 
     fn close_unanswered_question(
