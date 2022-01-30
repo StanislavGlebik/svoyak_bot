@@ -369,7 +369,7 @@ impl GameState {
         eprintln!("User {} sent a message '{}'", user, message);
 
         // Only messages of up to 3 symbols are considered a "press of a button"
-        if message.len() > 3 {
+        if message.chars().count() > 3 {
             return vec![];
         }
 
