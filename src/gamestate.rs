@@ -379,7 +379,7 @@ impl GameState {
                 Some(player) => {
                     self.players_falsestarted.insert(player.clone());
                     return vec![UiRequest::SendTextToMainChat(format!(
-                        "Фальшстарт {}",
+                        "Фальстарт {}",
                         player.name()
                     ))];
                 }
@@ -664,7 +664,7 @@ impl GameState {
                 // False started people can answer now
                 self.players_falsestarted.clear();
                 vec![
-                    UiRequest::SendTextToMainChat("Фальшстарт окончен".to_string()),
+                    UiRequest::SendTextToMainChat("Фальстарт окончен".to_string()),
                     UiRequest::Timeout(None, Delay::Long)
                 ]
             } else {
