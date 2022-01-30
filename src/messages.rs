@@ -10,7 +10,9 @@ pub fn get_rand_correct_answer() -> String {
         "Верно!".to_string(),
         "В точку!".to_string(),
         "Несомненно это так".to_string(),
-        "Жжошь!".to_string(),
+        "Блестящий ответ!".to_string(),
+        "Отлично!".to_string(),
+        "Замечательно, продолжаем".to_string(),
     ];
 
     let mut rng = thread_rng();
