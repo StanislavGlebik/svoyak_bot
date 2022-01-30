@@ -27,6 +27,7 @@ mod stickers;
 mod telegram_config;
 mod timeout_stream;
 
+use gamestate::TopicIdx;
 use messages::*;
 use questionsstorage::{CsvQuestionsStorage, QuestionsStorage};
 
@@ -158,8 +159,8 @@ fn send_score_table(
 fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
     let mut inline_markup = InlineKeyboardMarkup::new();
     {
-        for topic in topics {
-            let data = format!("/topic{}", topic);
+        for (idx, topic) in topics.into_iter().enumerate() {
+            let data = format!("/topic{}", idx);
             let row = inline_markup.add_empty_row();
             row.push(InlineKeyboardButton::callback(format!("{}", topic), data));
         }
@@ -167,11 +168,11 @@ fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
     inline_markup
 }
 
-fn questioncosts_inline_keyboard(topic: String, costs: Vec<usize>) -> InlineKeyboardMarkup {
+fn questioncosts_inline_keyboard(topic_idx: TopicIdx, costs: Vec<usize>) -> InlineKeyboardMarkup {
     let mut inline_markup = InlineKeyboardMarkup::new();
     {
         for cost in costs {
-            let data = format!("/question{}_{}", topic, cost);
+            let data = format!("/question{}_{}", topic_idx.0, cost);
             let row = inline_markup.add_empty_row();
             row.push(InlineKeyboardButton::callback(format!("{}", cost), data));
         }
@@ -233,8 +234,8 @@ enum TextMessage {
 }
 
 enum CallbackMessage {
-    SelectedTopic(String),
-    SelectedQuestion(String, usize),
+    SelectedTopic(TopicIdx),
+    SelectedQuestion(TopicIdx, usize),
     AnswerYes,
     AnswerNo,
     Unknown,
@@ -328,9 +329,15 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
         let split: Vec<_> = data.rsplitn(2, '_').collect();
         if split.len() == 2 {
             let cost = split.get(0).expect("should not happen");
-            let topic = split.get(1).expect("should not happen");
+            let topic_idx = split.get(1).expect("should not happen");
+            let topic_idx = match topic_idx.parse::<usize>() {
+                Ok(topic_idx) => topic_idx,
+                Err(_) => {
+                    return CallbackMessage::Unknown;
+                }
+            };
             if let Ok(cost) = cost.parse::<usize>() {
-                return CallbackMessage::SelectedQuestion(topic.to_string(), cost);
+                return CallbackMessage::SelectedQuestion(TopicIdx(topic_idx), cost);
             } else {
                 return CallbackMessage::Unknown;
             }
@@ -341,7 +348,12 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
 
     if data.starts_with("/topic") {
         let data = data.trim_start_matches("/topic");
-        return CallbackMessage::SelectedTopic(data.into());
+        let maybe_topic_idx = data.parse::<usize>();
+        if let Ok(idx) = maybe_topic_idx {
+            return CallbackMessage::SelectedTopic(TopicIdx(idx));
+        } else {
+            return CallbackMessage::Unknown;
+        }
     }
 
     if data == ANSWER_YES {
@@ -490,11 +502,11 @@ fn main() -> Result<(), Error> {
                         UpdateKind::CallbackQuery(callback) => {
                             let data = callback.data;
                             match parse_callback(&data) {
-                                CallbackMessage::SelectedTopic(topic) => {
-                                    gamestate.select_topic(topic, callback.from.id)
+                                CallbackMessage::SelectedTopic(topic_id) => {
+                                    gamestate.select_topic(topic_id, callback.from.id)
                                 }
-                                CallbackMessage::SelectedQuestion(topic, cost) => {
-                                    gamestate.select_question(topic, cost, callback.from.id, &question_storage)
+                                CallbackMessage::SelectedQuestion(topic_idx, cost) => {
+                                    gamestate.select_question(topic_idx, cost, callback.from.id, &question_storage)
                                 }
                                 CallbackMessage::AnswerYes => gamestate.yes_reply(callback.from.id),
                                 CallbackMessage::AnswerNo => gamestate.no_reply(callback.from.id),
@@ -589,10 +601,10 @@ fn main() -> Result<(), Error> {
                         msg.reply_markup(inline_keyboard);
                         api.send(msg).await?;
                     }
-                    gamestate::UiRequest::ChooseQuestion(topic, costs) => {
+                    gamestate::UiRequest::ChooseQuestion(topic_idx, topic, costs) => {
                         let mut msg =
                             SendMessage::new(game_chat, format!("Выбрана тема '{}', выберите цену", topic));
-                        let inline_keyboard = questioncosts_inline_keyboard(topic, costs);
+                        let inline_keyboard = questioncosts_inline_keyboard(topic_idx, costs);
                         msg.reply_markup(inline_keyboard);
                         api.send(msg).await?;
                     }

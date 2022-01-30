@@ -51,6 +51,8 @@ pub struct GameState {
     auctions: Vec<(String, usize)>,
 }
 
+pub struct TopicIdx(pub usize);
+
 pub enum UiRequest {
     SendTextToMainChat(String),
     SendHtmlToMainChat(String),
@@ -59,7 +61,7 @@ pub enum UiRequest {
     SendAudio(PathBuf),
     Timeout(Option<String>, Delay),
     ChooseTopic(String, Vec<String>),
-    ChooseQuestion(String, Vec<usize>),
+    ChooseQuestion(TopicIdx, String, Vec<usize>),
     AskAdminYesNo(String),
     SendToAdmin(String),
     SendScoreTable(ScoreTable),
@@ -676,7 +678,7 @@ impl GameState {
         }
     }
 
-    pub fn select_topic<T: ToString>(&mut self, topic: T, user: UserId) -> Vec<UiRequest> {
+    pub fn select_topic(&mut self, idx: TopicIdx, user: UserId) -> Vec<UiRequest> {
         // TODO(stas): make it possible to deselect the topic
         if self.state != State::WaitingForTopic {
             println!("unexpected topic selection");
@@ -688,12 +690,11 @@ impl GameState {
             return vec![];
         }
 
-        let topic = topic.to_string();
-        match self.questions.iter().find(|(t, _)| t == &topic).cloned() {
-            Some((_, costs)) => {
+        match self.questions.get(idx.0).cloned() {
+            Some((topic, costs)) => {
                 if !costs.is_empty() {
                     self.set_state(State::WaitingForQuestion);
-                    vec![UiRequest::ChooseQuestion(topic.clone(), costs.clone())]
+                    vec![UiRequest::ChooseQuestion(idx, topic.clone(), costs.clone())]
                 } else {
                     vec![]
                 }
@@ -705,9 +706,9 @@ impl GameState {
         }
     }
 
-    pub fn select_question<T: ToString>(
+    pub fn select_question(
         &mut self,
-        topic: T,
+        topic_idx: TopicIdx,
         cost: usize,
         user: UserId,
         questions_storage: &Box<dyn QuestionsStorage>,
@@ -722,31 +723,28 @@ impl GameState {
             return vec![];
         }
 
-        let mut found = false;
-        let topic = topic.to_string();
-        for (cur_topic, costs) in &mut self.questions {
-            if cur_topic == &topic {
-                found = true;
+        let topic = match self.questions.get_mut(topic_idx.0) {
+            Some((cur_topic, costs)) => {
                 if costs.contains(&cost) {
                     costs.retain(|elem| elem != &cost);
                     eprintln!(
                         "Question in topic '{}' and cost {} was selected",
-                        topic, cost
+                        cur_topic, cost
                     );
+                    cur_topic.clone()
                 } else {
                     eprintln!(
                         "Question in topic '{}' and cost {} was already used!",
-                        topic, cost
+                        cur_topic, cost
                     );
                     return vec![];
                 }
             }
-        }
-
-        if !found {
-            println!("unknown topic");
-            return vec![];
-        }
+            None => {
+                println!("unknown topic");
+                return vec![];
+            }
+        };
 
         let mut reply = vec![];
         reply.push(
