@@ -655,7 +655,7 @@ impl GameState {
                 // False start for them.
                 return vec![UiRequest::Timeout(None, Delay::Short)];
             } else {
-                return vec![UiRequest::Timeout(None, Delay::Long)];
+                return vec![UiRequest::Timeout(None, Delay::ExtraLong)];
             }
         };
 
@@ -665,7 +665,7 @@ impl GameState {
                 self.players_falsestarted.clear();
                 vec![
                     UiRequest::SendTextToMainChat("Фальстарт окончен".to_string()),
-                    UiRequest::Timeout(None, Delay::Long)
+                    UiRequest::Timeout(None, Delay::ExtraLong)
                 ]
             } else {
                 self.close_unanswered_question(question, Some(String::from("Время на ответ вышло!")))
