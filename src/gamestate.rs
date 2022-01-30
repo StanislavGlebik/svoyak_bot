@@ -60,7 +60,7 @@ pub enum UiRequest {
     SendImage(PathBuf),
     SendAudio(PathBuf),
     Timeout(Option<String>, Delay),
-    ChooseTopic(String, Vec<String>),
+    ChooseTopic(String, Vec<(TopicIdx, String)>),
     ChooseQuestion(TopicIdx, String, Vec<usize>),
     AskAdminYesNo(String),
     SendToAdmin(String),
@@ -458,8 +458,9 @@ impl GameState {
         let topics: Vec<_> = self
             .questions
             .iter()
-            .filter(|&(_, costs)| !costs.is_empty())
-            .map(|(topic, _)| topic.clone())
+            .enumerate()
+            .filter(|&(_, (_, costs))| !costs.is_empty())
+            .map(|(idx, (topic, _))| (TopicIdx(idx), topic.clone()))
             .collect();
         if topics.is_empty() {
             vec![

@@ -156,11 +156,11 @@ fn send_score_table(
     Ok(())
 }
 
-fn topics_inline_keyboard(topics: Vec<String>) -> InlineKeyboardMarkup {
+fn topics_inline_keyboard(topics: Vec<(TopicIdx, String)>) -> InlineKeyboardMarkup {
     let mut inline_markup = InlineKeyboardMarkup::new();
     {
-        for (idx, topic) in topics.into_iter().enumerate() {
-            let data = format!("/topic{}", idx);
+        for (idx, topic) in topics {
+            let data = format!("/topic{}", idx.0);
             let row = inline_markup.add_empty_row();
             row.push(InlineKeyboardButton::callback(format!("{}", topic), data));
         }
