@@ -1,0 +1,42 @@
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+<body>
+    <div id="answered"></div>
+    <button type="button" onclick="reset()">Reset</button>
+
+    <script>
+        function reset() {
+            const url='http://localhost:8080/emit'
+
+            $( "#answered" ).text("");
+            $.get(url, function (data, status) {
+                    if (status == "success") {
+                        console.log("Sent reset")
+                    }
+                },
+            );
+        }
+
+
+        function longpoll() {
+            console.log("sending admin long poll request")
+            const url='http://localhost:8080/adminlongpoll' + (Math.random() * 100);
+            $.ajax({
+                url: url,
+                headers: {"Cache-Control": "no-cache, no-transform"},
+                success: function (data, status) {
+                    if (status == "success") {
+                        console.log(data)
+                        let curText = $( "#answered" ).text();
+                        $( "#answered" ).text(curText + "\n" + data);
+                    }
+
+                    longpoll()
+                },
+            });
+        }
+        longpoll()
+
+    </script>
+</body>

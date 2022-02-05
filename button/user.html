@@ -1,0 +1,77 @@
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+<body>
+    <div id="buttonlabel">Ready...</div>
+
+    <button type="button" id="button" onclick="processButtonClick()">Click Me!</button>
+    <input type="text" id="nameinput" oninput="onTextInput()">
+
+    <script>
+        let timestamp = + new Date();
+        const ready = "Ready...";
+        const go = "Go!";
+
+        function processButtonClick() {
+            const url='http://localhost:8080/buttonpressed'
+
+            let text = "";
+            if ($( "#buttonlabel" ).text() == go) {
+                let new_timestamp = + new Date();
+                let diff = new_timestamp - timestamp;
+                console.log(diff);
+                text = diff.toString() + " " + $( "#nameinput" ).val();
+            }
+
+            $.post(url, text,  function (data, status) {
+                    if (status == "success") {
+                        console.log("Send button press event")
+                    }
+                },
+            );
+        }
+
+        function onTextInput() {
+            if ($( "#nameinput" ).val().length == 0) {
+                $("#button").hide()
+            } else {
+                $("#button").show()
+            }
+        }
+
+        $.ajax({
+            url: "http://localhost:8080/clientgetcurrentstate",
+            async: false,
+            success: function (data, status) {
+            if (data == "started") {
+                $( "#buttonlabel" ).text(go)
+            } else {
+                $( "#buttonlabel" ).text(ready)
+            }
+        }});
+
+        function longpoll() {
+            console.log("sending long poll request")
+            const url='http://localhost:8080/clientlongpoll' + (Math.random() * 100);
+            $.ajax({
+                url: url,
+                headers: {"Cache-Control": "no-cache, no-transform"},
+                success: function (data, status) {
+                    if (status == "success") {
+                        if ($( "#buttonlabel" ).text() == go) {
+                            $( "#buttonlabel" ).text(ready)
+                        } else {
+                            // Kickoff timer
+                            $( "#buttonlabel" ).text(go)
+                            timestamp = + new Date();
+                        }
+                    }
+
+                    longpoll()
+                },
+            });
+        }
+
+        longpoll()
+    </script>
+</body>
