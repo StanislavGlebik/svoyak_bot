@@ -25,11 +25,15 @@ function togglestate() {
     }
 }
 
+
+hostname = process.argv[2];
+
 http.createServer(function (req, res) {
   console.log("path " + req.url)
   if (req.url == "/") {
       try {
-          const data = fs.readFileSync("./user.html", 'utf8');
+          let data = fs.readFileSync("./user.html", 'utf8');
+          data = data.replaceAll("HOSTNAME", hostname);
           res.writeHead(200, {'Content-Type': 'text/html'});
           res.end(data)
       } catch (err) {
@@ -38,7 +42,8 @@ http.createServer(function (req, res) {
       }
   } else if (req.url == "/admin") {
       try {
-          const data = fs.readFileSync("./admin.html", 'utf8');
+          let data = fs.readFileSync("./admin.html", 'utf8');
+          data = data.replaceAll("HOSTNAME", hostname);
           res.writeHead(200, {'Content-Type': 'text/html'});
           res.end(data)
       } catch (err) {

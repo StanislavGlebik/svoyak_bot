@@ -7,7 +7,7 @@
 
     <script>
         function reset() {
-            const url='http://localhost:8080/emit'
+            const url='http://HOSTNAME:8080/emit'
 
             $( "#answered" ).text("");
             $.get(url, function (data, status) {
@@ -21,7 +21,7 @@
 
         function longpoll() {
             console.log("sending admin long poll request")
-            const url='http://localhost:8080/adminlongpoll' + (Math.random() * 100);
+            const url='http://HOSTNAME:8080/adminlongpoll' + (Math.random() * 100);
             $.ajax({
                 url: url,
                 headers: {"Cache-Control": "no-cache, no-transform"},
