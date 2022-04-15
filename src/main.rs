@@ -529,8 +529,10 @@ fn main() -> Result<(), Error> {
             for r in res {
                 match r {
                     gamestate::UiRequest::SendTextToMainChat(msg) => {
-                        let msg = SendMessage::new(game_chat, msg);
-                        api.send(msg).await?;
+                        if !msg.is_empty() {
+                            let msg = SendMessage::new(game_chat, msg);
+                            api.send(msg).await?;
+                        }
                     }
                     gamestate::UiRequest::SendHtmlToMainChat(msg) => {
                         let mut msg = SendMessage::new(game_chat, msg);
