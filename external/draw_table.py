@@ -4,6 +4,8 @@ import argparse
 import json
 from PIL import ImageDraw, Image, ImageFont
 
+# `sudo apt install ttf-mscorefonts-installer --yes` - install on ubuntu
+
 class TableDrawer(object):
     FONT_NAME = 'arial'
     TOPIC_WIDTH = 800

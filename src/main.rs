@@ -83,6 +83,7 @@ fn make_score_table_image(table_filename: &str, image_filename: &str) -> Result<
 }
 
 fn send_photo_via_curl(game_chat: ChatId, token: &str, filename: &str) -> Result<(), Error> {
+    println!("send_photo_via_curl");
     let status = Command::new("curl")
         .arg("-F")
         .arg(format!("chat_id={}", game_chat))
