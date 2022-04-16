@@ -7,6 +7,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use regex::Regex;
 
 use crate::question::Question;
 
@@ -197,6 +198,8 @@ async fn parse_attachment(attachment: &str) -> Result<(Option<PathBuf>, Option<P
 }
 
 async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
+    let uri = convert_url(uri.to_string());
+    eprintln!("{}", uri);
     let https = HttpsConnector::new();
     let client = Client::builder().build::<_, hyper::Body>(https);
     let uri = uri.parse()?;
@@ -218,6 +221,16 @@ async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
     let bytes = hyper::body::to_bytes(resp.into_body()).await?;
 
     Ok(bytes)
+}
+
+fn convert_url(s: String) -> String {
+    let regex = "^https://drive.google.com/file/d/([^/])/view";
+    let re = Regex::new(regex).expect("wrong regex");
+    if let Some(matches) = re.captures(&s) {
+        format!("https://docs.google.com/uc?export=download&id={}", matches.get(1).unwrap().as_str())
+    } else {
+        s
+    }
 }
 
 fn check_if_cat_in_bag(question: String) -> Result<Option<(String, String)>, Error> {
