@@ -274,8 +274,8 @@ fn parse_text_message(data: &String) -> TextMessage {
     if data.starts_with("/auction") {
         let split: Vec<_> = data.splitn(3, ' ').collect();
         if split.len() == 3 {
-            if let Ok(cost) = split[2].parse() {
-                return TextMessage::UpdateAuctionCost(split[1].to_string(), cost);
+            if let Ok(cost) = split[1].parse() {
+                return TextMessage::UpdateAuctionCost(split[2].to_string(), cost);
             }
         }
     }
@@ -392,6 +392,16 @@ fn main() -> Result<(), Error> {
     let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok(), token);
     let api = Api::new(&config.token);
 
+    eprintln!("loading questions");
+    let question_storage = runtime.block_on_std(
+        CsvQuestionsStorage::new(
+            config.questions_storage_path.clone(),
+        )
+    )?;
+    let question_storage: Box<dyn QuestionsStorage> = Box::new(question_storage);
+
+    eprintln!("loaded questions");
+
     let game_chat = match config.game_chat {
         Some(game_chat) => {
             game_chat
@@ -432,14 +442,6 @@ fn main() -> Result<(), Error> {
     let requests_stream = merge_updates_and_timeouts(updates_stream, timeout_stream);
 
     eprintln!("Game is ready to start!");
-    let question_storage = runtime.block_on_std(
-        CsvQuestionsStorage::new(
-            config.questions_storage_path.clone(),
-        )
-    )?;
-    let question_storage: Box<dyn QuestionsStorage> = Box::new(question_storage);
-
-    eprintln!("loaded questions");
     let mut gamestate = gamestate::GameState::new(
         config.admin_user,
         &question_storage,
