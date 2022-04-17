@@ -203,17 +203,8 @@ async fn download_url(uri: &str, google_api_key: String) -> Result<hyper::body::
     let https = HttpsConnector::new();
     let client = Client::builder().build::<_, hyper::Body>(https);
     let uri = uri.parse()?;
-    let mut resp = client.get(uri).await?;
-    let mut status = resp.status();
-
-    if status == hyper::StatusCode::FOUND || status == hyper::StatusCode::SEE_OTHER {
-        let uri = resp.headers().get("Location")
-            .ok_or_else(|| err_msg("no location after redirect"))?
-            .to_str()?;
-        let uri = uri.parse()?;
-        resp = client.get(uri).await?;
-        status = resp.status();
-    }
+    let resp = client.get(uri).await?;
+    let status = resp.status();
 
     if status != hyper::StatusCode::OK {
         return Err(err_msg(format!("failed with error code {}", status)));
