@@ -209,8 +209,18 @@ async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
     let https = HttpsConnector::new();
     let client = Client::builder().build::<_, hyper::Body>(https);
     let uri = uri.parse()?;
-    let resp = client.get(uri).await?;
-    let status = resp.status();
+
+    let mut resp = client.get(uri).await?;
+    let mut status = resp.status();
+
+    if status == hyper::StatusCode::FOUND || status == hyper::StatusCode::SEE_OTHER {
+        let uri = resp.headers().get("Location")
+            .ok_or_else(|| err_msg("no location after redirect"))?
+            .to_str()?;
+        let uri = uri.parse()?;
+        resp = client.get(uri).await?;
+        status = resp.status();
+    }
 
     if status != hyper::StatusCode::OK {
         return Err(err_msg(format!("failed with error code {}", status)));
@@ -229,7 +239,8 @@ fn convert_url(s: String, google_api_key: String) -> String {
         let re = Regex::new(regex).expect("wrong regex");
         if let Some(matches) = re.captures(&s) {
             let m = matches.get(1).unwrap().as_str();
-            return format!("https://www.googleapis.com/drive/v3/files/{}?key={}&alt=media", m, google_api_key);
+            return format!("https://docs.google.com/uc?export=download&id={}", m);
+            // return format!("https://www.googleapis.com/drive/v3/files/{}?key={}&alt=media", m, google_api_key);
         }
     }
     s
