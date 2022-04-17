@@ -55,7 +55,7 @@ pub struct CsvQuestionsStorage {
 
 impl CsvQuestionsStorage {
     // TODO(stash): skip header
-    pub async fn new<P: AsRef<Path>>(p: P) -> Result<Self, Error> {
+    pub async fn new<P: AsRef<Path>>(p: P, google_api_key: String) -> Result<Self, Error> {
         let dir = p.as_ref();
         eprintln!("{:?}", dir);
         let mut questions_storage = HashMap::new();
@@ -92,7 +92,7 @@ impl CsvQuestionsStorage {
                 // second field is cost, we ignore it here
                 let attachment = record.get(2).unwrap();
                 let (image, audio) = if !attachment.is_empty() {
-                    parse_attachment(attachment).await?
+                    parse_attachment(attachment, google_api_key.clone()).await?
                 } else {
                     (None, None)
                 };
@@ -171,7 +171,7 @@ impl CsvQuestionsStorage {
     }
 }
 
-async fn parse_attachment(attachment: &str) -> Result<(Option<PathBuf>, Option<PathBuf>), Error> {
+async fn parse_attachment(attachment: &str, google_api_key: String) -> Result<(Option<PathBuf>, Option<PathBuf>), Error> {
     let split = attachment.splitn(2, " ").collect::<Vec<_>>();
     if split.len() != 2 {
         return Err(err_msg(format!("invalid attachment {}", attachment)));
@@ -180,7 +180,7 @@ async fn parse_attachment(attachment: &str) -> Result<(Option<PathBuf>, Option<P
     let ty = split[0];
     let uri = split[1];
 
-    let bytes = download_url(uri).await?;
+    let bytes = download_url(uri, google_api_key).await?;
     let mut s = DefaultHasher::new();
     bytes.hash(&mut s);
     let filename = format!("{}", s.finish());
@@ -197,8 +197,8 @@ async fn parse_attachment(attachment: &str) -> Result<(Option<PathBuf>, Option<P
     }
 }
 
-async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
-    let uri = convert_url(uri.to_string());
+async fn download_url(uri: &str, google_api_key: String) -> Result<hyper::body::Bytes, Error> {
+    let uri = convert_url(uri.to_string(), google_api_key);
     eprintln!("{}", uri);
     let https = HttpsConnector::new();
     let client = Client::builder().build::<_, hyper::Body>(https);
@@ -223,14 +223,19 @@ async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
     Ok(bytes)
 }
 
-fn convert_url(s: String) -> String {
-    let regex = "^https://drive.google.com/file/d/([^/])/view";
-    let re = Regex::new(regex).expect("wrong regex");
-    if let Some(matches) = re.captures(&s) {
-        format!("https://docs.google.com/uc?export=download&id={}", matches.get(1).unwrap().as_str())
-    } else {
-        s
+fn convert_url(s: String, google_api_key: String) -> String {
+    let regexes = &[
+        "^https://drive.google.com/file/d/([^/])/view",
+        "^https://docs.google.com/uc\\?export=download&id=([^/]+)",
+    ];
+    for regex in regexes {
+        let re = Regex::new(regex).expect("wrong regex");
+        if let Some(matches) = re.captures(&s) {
+            let m = matches.get(1).unwrap().as_str();
+            return format!("https://www.googleapis.com/drive/v3/files/{}?key={}&alt=media", m, google_api_key);
+        }
     }
+    s
 }
 
 fn check_if_cat_in_bag(question: String) -> Result<Option<(String, String)>, Error> {

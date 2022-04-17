@@ -32,6 +32,7 @@ use messages::*;
 use questionsstorage::{CsvQuestionsStorage, QuestionsStorage};
 
 const TOKEN_VAR: &str = "TELEGRAM_BOT_TOKEN";
+const GOOGLE_API_KEY: &str = "GOOGLE_API_KEY";
 const CONFIG_VAR: &str = "GAME_CONFIG";
 
 const ANSWER_YES: &str = "AnswerYes";
@@ -387,6 +388,8 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
 }
 
 fn main() -> Result<(), Error> {
+    let google_api_key = env::var(GOOGLE_API_KEY).expect("google api key is not set");
+
     let mut runtime = Runtime::new()?;
     let token = env::var(TOKEN_VAR).unwrap();
     let config = telegram_config::Config::new(env::var(CONFIG_VAR).ok(), token);
@@ -396,6 +399,7 @@ fn main() -> Result<(), Error> {
     let question_storage = runtime.block_on_std(
         CsvQuestionsStorage::new(
             config.questions_storage_path.clone(),
+            google_api_key.to_string(),
         )
     )?;
     let question_storage: Box<dyn QuestionsStorage> = Box::new(question_storage);
