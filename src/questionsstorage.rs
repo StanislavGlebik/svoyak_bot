@@ -180,13 +180,21 @@ async fn parse_attachment(attachment: &str, google_api_key: String) -> Result<(O
     let ty = split[0];
     let uri = split[1];
 
-    let bytes = download_url(uri, google_api_key).await?;
+    let uri = convert_url(uri.to_string(), google_api_key);
+    eprintln!("converted url to {}", uri);
     let mut s = DefaultHasher::new();
-    bytes.hash(&mut s);
+    uri.hash(&mut s);
     let filename = format!("{}", s.finish());
-    eprintln!("downloaded {}", bytes.len());
-    std::fs::write(filename.clone(), bytes)?;
-    eprintln!("written to {}", filename);
+    
+    if !Path::new(&filename).exists() {
+        let bytes = download_url(&uri).await?;
+        eprintln!("downloaded {}", bytes.len());
+        std::fs::write(filename.clone(), bytes)?;
+        eprintln!("written to {}", filename);
+    } else {
+        eprintln!("skiping download because already downloaded");
+    }
+
 
     if ty == "image" {
         Ok((Some(filename.into()), None))
@@ -197,9 +205,7 @@ async fn parse_attachment(attachment: &str, google_api_key: String) -> Result<(O
     }
 }
 
-async fn download_url(uri: &str, google_api_key: String) -> Result<hyper::body::Bytes, Error> {
-    let uri = convert_url(uri.to_string(), google_api_key);
-    eprintln!("{}", uri);
+async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
     let https = HttpsConnector::new();
     let client = Client::builder().build::<_, hyper::Body>(https);
     let uri = uri.parse()?;
