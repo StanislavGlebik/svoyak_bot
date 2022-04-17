@@ -758,8 +758,16 @@ impl GameState {
             UiRequest::SendTextToMainChat(format!("Играем тему {}, вопрос за {}", topic, cost))
         );
 
+        let question = match questions_storage.get(topic.clone(), cost / self.current_multiplier) {
+            Some(question) => question,
+            None => {
+                println!("internal error: question is not found");
+                return vec![];
+            }
+        };
+
         let maybe_cat_in_bag = self.is_cat_in_bag(&topic, &cost);
-        if let Some((new_topic, question)) = maybe_cat_in_bag {
+        if let Some(new_topic) = maybe_cat_in_bag {
             self.set_state(State::CatInBagChoosingPlayer(new_topic, question.clone()));
             reply.push(
                 UiRequest::SendToAdmin(format!(
@@ -782,48 +790,38 @@ impl GameState {
             return reply;
         }
 
-        match questions_storage
-            .get(topic.clone(), cost / self.current_multiplier)
-        {
-            Some(question) => {
-                reply.push(
-                    UiRequest::SendToAdmin(format!(
-                        "question: {}\nanswer: {}",
-                        question.question(),
-                        question.answer(),
-                    ))
-                );
+        reply.push(
+            UiRequest::SendToAdmin(format!(
+                "question: {}\nanswer: {}",
+                question.question(),
+                question.answer(),
+            ))
+        );
 
-                if self.is_manual(&topic, &cost) {
-                    eprintln!("manual question");
-                    self.set_state(State::Pause);
-                    let score = self.get_score_str();
-                    reply.push(
-                        UiRequest::SendTextToMainChat(format!("Вопрос играется вручную\n{}", score)),
-                    );
-                    reply
-                } else if self.is_auction(&topic, &cost) {
-                    eprintln!("auction");
-                    self.set_state(State::WaitingForAuction(topic.clone(), question.clone()));
-                    let score = self.get_score_str();
-                    reply.push(
-                       UiRequest::SendTextToMainChat(format!("Аукцион!\n{}", score))
-                    );
-                    reply
-                } else {
-                    eprintln!("automatic question");
-                    self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
-                    self.player_which_chose_question = self.current_player.clone();
-                    reply.push(
-                        UiRequest::Timeout(None, Delay::Medium),
-                    );
-                    reply
-                }
-            }
-            None => {
-                println!("internal error: question is not found");
-                vec![]
-            }
+        if self.is_manual(&topic, &cost) {
+            eprintln!("manual question");
+            self.set_state(State::Pause);
+            let score = self.get_score_str();
+            reply.push(
+                UiRequest::SendTextToMainChat(format!("Вопрос играется вручную\n{}", score)),
+            );
+            reply
+        } else if self.is_auction(&topic, &cost) {
+            eprintln!("auction");
+            self.set_state(State::WaitingForAuction(topic.clone(), question.clone()));
+            let score = self.get_score_str();
+            reply.push(
+               UiRequest::SendTextToMainChat(format!("Аукцион!\n{}", score))
+            );
+            reply
+        } else {
+            eprintln!("automatic question");
+            self.set_state(State::BeforeQuestionAsked(question.clone(), cost as i64));
+            self.player_which_chose_question = self.current_player.clone();
+            reply.push(
+                UiRequest::Timeout(None, Delay::Medium),
+            );
+            reply
         }
     }
 
@@ -1043,18 +1041,11 @@ impl GameState {
             .is_some()
     }
 
-    fn is_cat_in_bag(&mut self, cur_topic: &String, cur_cost: &usize) -> Option<(String, Question)> {
+    fn is_cat_in_bag(&mut self, cur_topic: &String, cur_cost: &usize) -> Option<String> {
         for cat_in_bag in &self.cats_in_bags {
             if &cat_in_bag.old_topic == cur_topic && &cat_in_bag.cost == cur_cost {
                 return Some(
-                    (
-                        cat_in_bag.new_topic.clone(),
-                        Question::new(
-                            cat_in_bag.question.clone(),
-                            cat_in_bag.answer.clone(),
-                            None,
-                        )
-                    )
+                    cat_in_bag.new_topic.clone(),
                 );
             }
         }
