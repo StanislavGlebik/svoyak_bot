@@ -253,7 +253,7 @@ fn parse_text_message(data: &String) -> TextMessage {
         }
     }
 
-    if data == "/question" {
+    if data == "/question" || data == "/next" {
         return TextMessage::NextQuestion;
     }
 
