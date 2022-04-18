@@ -55,7 +55,7 @@ pub struct CsvQuestionsStorage {
 
 impl CsvQuestionsStorage {
     // TODO(stash): skip header
-    pub async fn new<P: AsRef<Path>>(p: P, google_api_key: String) -> Result<Self, Error> {
+    pub async fn new<P: AsRef<Path>>(p: P, google_api_key: Option<String>) -> Result<Self, Error> {
         let dir = p.as_ref();
         eprintln!("{:?}", dir);
         let mut questions_storage = HashMap::new();
@@ -171,7 +171,7 @@ impl CsvQuestionsStorage {
     }
 }
 
-async fn parse_attachment(attachment: &str, google_api_key: String) -> Result<(Option<PathBuf>, Option<PathBuf>), Error> {
+async fn parse_attachment(attachment: &str, google_api_key: Option<String>) -> Result<(Option<PathBuf>, Option<PathBuf>), Error> {
     let split = attachment.splitn(2, " ").collect::<Vec<_>>();
     if split.len() != 2 {
         return Err(err_msg(format!("invalid attachment {}", attachment)));
@@ -230,7 +230,7 @@ async fn download_url(uri: &str) -> Result<hyper::body::Bytes, Error> {
     Ok(bytes)
 }
 
-fn convert_url(s: String, google_api_key: String) -> String {
+fn convert_url(s: String, google_api_key: Option<String>) -> String {
     let regexes = &[
         "^https://drive.google.com/file/d/([^/])/view",
         "^https://docs.google.com/uc\\?export=download&id=([^/]+)",
@@ -239,8 +239,11 @@ fn convert_url(s: String, google_api_key: String) -> String {
         let re = Regex::new(regex).expect("wrong regex");
         if let Some(matches) = re.captures(&s) {
             let m = matches.get(1).unwrap().as_str();
-            return format!("https://docs.google.com/uc?export=download&id={}", m);
-            // return format!("https://www.googleapis.com/drive/v3/files/{}?key={}&alt=media", m, google_api_key);
+            if let Some(ref google_api_key) = google_api_key {
+                return format!("https://www.googleapis.com/drive/v3/files/{}?key={}&alt=media", m, google_api_key);
+            } else {
+                return format!("https://docs.google.com/uc?export=download&id={}", m);
+            }
         }
     }
     s

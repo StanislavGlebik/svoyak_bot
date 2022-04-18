@@ -388,7 +388,7 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
 }
 
 fn main() -> Result<(), Error> {
-    let google_api_key = env::var(GOOGLE_API_KEY).expect("google api key is not set");
+    let google_api_key = env::var(GOOGLE_API_KEY);
 
     let mut runtime = Runtime::new()?;
     let token = env::var(TOKEN_VAR).unwrap();
@@ -399,7 +399,7 @@ fn main() -> Result<(), Error> {
     let question_storage = runtime.block_on_std(
         CsvQuestionsStorage::new(
             config.questions_storage_path.clone(),
-            google_api_key.to_string(),
+            google_api_key.ok().map(|x| x.to_string()),
         )
     )?;
     let question_storage: Box<dyn QuestionsStorage> = Box::new(question_storage);
