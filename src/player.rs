@@ -7,11 +7,12 @@ use std::hash::{Hash, Hasher};
 pub struct Player {
     name: String,
     id: UserId,
+    username: Option<String>,
 }
 
 impl Player {
-    pub fn new(name: String, id: UserId) -> Player {
-        Player { name, id }
+    pub fn new(name: String, id: UserId, username: Option<String>) -> Player {
+        Player { name, id, username }
     }
 
     pub fn name(&self) -> &String {
@@ -20,6 +21,10 @@ impl Player {
 
     pub fn id(&self) -> UserId {
         self.id
+    }
+
+    pub fn username(&self) -> &Option<String> {
+        &self.username
     }
 }
 

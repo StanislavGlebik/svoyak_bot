@@ -62,8 +62,10 @@ pub enum UiRequest {
     SendImage(PathBuf),
     SendAudio(PathBuf),
     Timeout(Option<String>, Delay),
-    ChooseTopic(String, Vec<(TopicIdx, String)>),
-    ChooseQuestion(TopicIdx, String, Vec<usize>),
+    // 3rd parameter is telegram's username
+    ChooseTopic(String, Vec<(TopicIdx, String)>, Option<String>),
+    // 3rd parameter is telegram's username
+    ChooseQuestion(TopicIdx, String, Vec<usize>, Option<String>),
     AskAdminYesNo(String),
     SendToAdmin(String),
     SendScoreTable(ScoreTable),
@@ -278,7 +280,7 @@ impl GameState {
         res
     }
 
-    pub fn add_player(&mut self, new_user: UserId, name: String) -> Vec<UiRequest> {
+    pub fn add_player(&mut self, new_user: UserId, name: String, username: Option<String>) -> Vec<UiRequest> {
         if self.state != State::WaitingForPlayersToJoin {
             println!("{} tried to join, but the game has already started", name);
             return vec![];
@@ -293,7 +295,7 @@ impl GameState {
                 "Игрок с таким именем уже существует",
             ))]
         } else {
-            self.players.insert(Player::new(name.clone(), new_user), 0);
+            self.players.insert(Player::new(name.clone(), new_user, username), 0);
             vec![UiRequest::SendTextToMainChat(format!("Привет {}", name))]
         }
     }
@@ -440,8 +442,8 @@ impl GameState {
             println!("non-admin user tried to select next question");
             return vec![];
         }
-        let current_player_name = match self.current_player {
-            Some(ref player) => player.name().clone(),
+        let current_player = match self.current_player {
+            Some(ref player) => player.clone(),
             None => {
                 println!("internal error: no current player!");
                 return vec![];
@@ -463,7 +465,7 @@ impl GameState {
             self.set_state(State::WaitingForTopic);
             vec![
                 UiRequest::SendScoreTable(self.make_score_table()),
-                UiRequest::ChooseTopic(current_player_name, topics),
+                UiRequest::ChooseTopic(current_player.name().to_string(), topics, current_player.username().clone()),
             ]
         }
     }
@@ -690,11 +692,18 @@ impl GameState {
             return vec![];
         }
 
+        let current_player_username = match self.current_player {
+            Some(ref player) => player.username().clone(),
+            None => {
+                None
+            }
+        };
+
         match self.questions.get(idx.0).cloned() {
             Some((topic, costs)) => {
                 if !costs.is_empty() {
                     self.set_state(State::WaitingForQuestion(idx));
-                    vec![UiRequest::ChooseQuestion(idx, topic.clone(), costs.clone())]
+                    vec![UiRequest::ChooseQuestion(idx, topic.clone(), costs.clone(), current_player_username)]
                 } else {
                     vec![]
                 }
@@ -1206,8 +1215,8 @@ mod test {
     #[test]
     fn test_add_player() {
         let (mut game_state, _) = create_game_state(UserId::from(1));
-        game_state.add_player(UserId::from(1), String::from("new"));
-        game_state.add_player(UserId::from(1), String::from("new"));
+        game_state.add_player(UserId::from(1), String::from("new"), None);
+        game_state.add_player(UserId::from(1), String::from("new"), None);
         assert_eq!(game_state.get_players().len(), 1);
     }
 
@@ -1222,7 +1231,7 @@ mod test {
         game_state.start(UserId::from(1));
         assert_eq!(game_state.get_state(), &State::WaitingForPlayersToJoin);
 
-        game_state.add_player(UserId::from(1), String::from("new"));
+        game_state.add_player(UserId::from(1), String::from("new"), None);
         game_state.start(UserId::from(1));
         assert_eq!(game_state.get_state(), &State::Pause);
 
@@ -1236,8 +1245,8 @@ mod test {
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
         let (mut game_state, questions_storage) = create_game_state(admin);
-        game_state.add_player(p1, String::from("new_1"));
-        game_state.add_player(p2, String::from("new_2"));
+        game_state.add_player(p1, String::from("new_1"), None);
+        game_state.add_player(p2, String::from("new_2"), None);
         game_state.start(admin);
         match game_state.get_state() {
             &State::Pause => {}
@@ -1329,7 +1338,7 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let (mut game_state, questions_storage) = create_game_state(admin);
-        game_state.add_player(p1, String::from("new_1"));
+        game_state.add_player(p1, String::from("new_1"), None);
         game_state.start(admin);
         game_state.next_tour(admin);
         game_state.next_question(admin);
@@ -1346,7 +1355,7 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let (mut game_state, questions_storage) = create_game_state(admin);
-        game_state.add_player(p1, String::from("new_1"));
+        game_state.add_player(p1, String::from("new_1"), None);
         game_state.start(admin);
         game_state.next_question(admin);
 
@@ -1371,7 +1380,7 @@ mod test {
         let admin = UserId::from(1);
         let p1 = UserId::from(2);
         let (mut game_state, questions_storage) = create_game_state(admin);
-        game_state.add_player(p1, String::from("new_1"));
+        game_state.add_player(p1, String::from("new_1"), None);
         game_state.start(admin);
         game_state.next_question(admin);
 
@@ -1394,8 +1403,8 @@ mod test {
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
         let (mut game_state, questions_storage) = create_game_state(admin);
-        game_state.add_player(p1, String::from("new_1"));
-        game_state.add_player(p2, String::from("new_2"));
+        game_state.add_player(p1, String::from("new_1"), None);
+        game_state.add_player(p2, String::from("new_2"), None);
         game_state.start(admin);
         game_state.next_question(admin);
 
@@ -1420,8 +1429,8 @@ mod test {
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
         let (mut game_state, questions_storage) = create_game_state(admin);
-        game_state.add_player(p1, String::from("new_1"));
-        game_state.add_player(p2, String::from("new_2"));
+        game_state.add_player(p1, String::from("new_1"), None);
+        game_state.add_player(p2, String::from("new_2"), None);
         game_state.start(admin);
         game_state.next_question(admin);
 
@@ -1477,8 +1486,8 @@ mod test {
         let p1 = UserId::from(2);
         let p2 = UserId::from(3);
         let (mut game_state, questions_storage) = create_game_state(admin);
-        game_state.add_player(p1, String::from("new_1"));
-        game_state.add_player(p2, String::from("new_2"));
+        game_state.add_player(p1, String::from("new_1"), None);
+        game_state.add_player(p2, String::from("new_2"), None);
         game_state.start(admin);
 
         // first no, second no
@@ -1513,12 +1522,12 @@ mod test {
         let p1_id = UserId::from(2);
         let p2_id = UserId::from(3);
         let (mut game_state, questions_storage) = create_game_state(admin_id);
-        game_state.add_player(p1_id, String::from("new_1"));
-        game_state.add_player(p2_id, String::from("new_2"));
+        game_state.add_player(p1_id, String::from("new_1"), None);
+        game_state.add_player(p2_id, String::from("new_2"), None);
         game_state.start(admin_id);
 
-        let p1 = Player::new(String::from("new_1"), p1_id);
-        let p2 = Player::new(String::from("new_2"), p2_id);
+        let p1 = Player::new(String::from("new_1"), p1_id, None);
+        let p2 = Player::new(String::from("new_2"), p2_id, None);
         let mut players_answered = HashSet::new();
 
         // first question asked
@@ -1625,7 +1634,7 @@ mod test {
         )
         .unwrap();
 
-        game_state.add_player(p1_id, String::from("new_1"));
+        game_state.add_player(p1_id, String::from("new_1"), None);
         game_state.start(admin_id);
 
         game_state.next_question(admin_id);
@@ -1675,8 +1684,8 @@ mod test {
 
         let p1_id = UserId::from(2);
         let p2_id = UserId::from(3);
-        game_state.add_player(p1_id, String::from("new_1"));
-        game_state.add_player(p2_id, String::from("new_2"));
+        game_state.add_player(p1_id, String::from("new_1"), None);
+        game_state.add_player(p2_id, String::from("new_2"), None);
         game_state.start(admin_id);
 
         game_state.next_question(admin_id);
@@ -1738,8 +1747,8 @@ mod test {
 
         let p1_id = UserId::from(2);
         let p2_id = UserId::from(3);
-        game_state.add_player(p1_id, String::from("new_1"));
-        game_state.add_player(p2_id, String::from("new_2"));
+        game_state.add_player(p1_id, String::from("new_1"), None);
+        game_state.add_player(p2_id, String::from("new_2"), None);
         game_state.start(admin_id);
 
         game_state.next_question(admin_id);

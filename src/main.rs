@@ -174,16 +174,19 @@ fn topics_inline_keyboard(topics: Vec<(TopicIdx, String)>) -> InlineKeyboardMark
     inline_markup
 }
 
-fn topics_keyboard(topics: Vec<(TopicIdx, String)>) -> ReplyKeyboardMarkup {
-    let mut inline_markup = ReplyKeyboardMarkup::new();
-    inline_markup.one_time_keyboard();
+fn topics_keyboard(topics: Vec<(TopicIdx, String)>, selective: bool) -> ReplyKeyboardMarkup {
+    let mut markup = ReplyKeyboardMarkup::new();
+    markup.one_time_keyboard();
+    if selective {
+        markup.selective();
+    }
     {
         for (_, topic) in topics {
-            let row = inline_markup.add_empty_row();
+            let row = markup.add_empty_row();
             row.push(KeyboardButton::new(format!("{}", topic)));
         }
     }
-    inline_markup
+    markup
 }
 
 fn questioncosts_inline_keyboard(topic_idx: TopicIdx, costs: Vec<usize>) -> InlineKeyboardMarkup {
@@ -199,9 +202,12 @@ fn questioncosts_inline_keyboard(topic_idx: TopicIdx, costs: Vec<usize>) -> Inli
 }
      
 
-fn questioncosts_keyboard(costs: Vec<usize>) -> ReplyKeyboardMarkup {
+fn questioncosts_keyboard(costs: Vec<usize>, selective: bool) -> ReplyKeyboardMarkup {
     let mut markup = ReplyKeyboardMarkup::new();
     markup.one_time_keyboard();
+    if selective {
+        markup.selective();
+    }
     {
         for cost in costs {
             let row = markup.add_empty_row();
@@ -538,7 +544,7 @@ fn main() -> Result<(), Error> {
                             if let MessageKind::Text { ref data, .. } = message.kind {
                                 match parse_text_message(&message, data, choose_topic_message_id, choose_question_message_id) {
                                     TextMessage::Join(name) => {
-                                        gamestate.add_player(message.from.id, name)
+                                        gamestate.add_player(message.from.id, name, message.from.username)
                                     }
                                     TextMessage::JustMessage(text_msg) => {
                                         gamestate.message(message.from.id, text_msg)
@@ -681,35 +687,60 @@ fn main() -> Result<(), Error> {
                         // TODO(stash): handle?
                         let _ = sender.clone().send(Some(timer_and_msg)).compat().map_err(|_|()).await;
                     }
-                    gamestate::UiRequest::ChooseTopic(current_player_name, topics) => {
-                        let mut msg = SendMessage::new(
-                            game_chat,
-                            format!("{}, выберите тему", current_player_name),
-                        );
+                    gamestate::UiRequest::ChooseTopic(current_player_name, topics, username) => {
                         if opt.use_separate_keyboards {
-                            let keyboard = topics_keyboard(topics);
+                            let (mut msg, selective) = if let Some(username) = username {
+                                (SendMessage::new(
+                                    game_chat,
+                                    format!("@{}, выберите тему", username),
+                                ), true)
+                            } else {
+                                (SendMessage::new(
+                                    game_chat,
+                                    format!("{}, выберите тему", current_player_name),
+                                ), false)
+                            };
+                            let keyboard = topics_keyboard(topics, selective);
                             msg.reply_markup(keyboard);
                             let r = api.send(msg).await?;
                             if let MessageOrChannelPost::Message(msg) = r {
                                 choose_topic_message_id = Some(msg.id);
                             }
                         } else {
+                            let mut msg = SendMessage::new(
+                                game_chat,
+                                format!("{}, выберите тему", current_player_name),
+                            );
                             let inline_keyboard = topics_inline_keyboard(topics);
                             msg.reply_markup(inline_keyboard);
                             api.send(msg).await?;
                         }
                     }
-                    gamestate::UiRequest::ChooseQuestion(topic_idx, topic, costs) => {
-                        let mut msg =
-                            SendMessage::new(game_chat, format!("Выбрана тема '{}', выберите цену", topic));
+                    gamestate::UiRequest::ChooseQuestion(topic_idx, topic, costs, username) => {
                         if opt.use_separate_keyboards {
-                            let inline_keyboard = questioncosts_keyboard(costs);
+                            let (mut msg, selective) = if let Some(username) = username {
+                                (SendMessage::new(
+                                    game_chat,
+                                    format!("@{}, выбрана тема '{}', выберите цену", username, topic)
+                                ), true)
+                            } else {
+                                (SendMessage::new(
+                                    game_chat,
+                                    format!("Выбрана тема '{}', выберите цену", topic),
+                                ), false)
+                            };
+
+                            let inline_keyboard = questioncosts_keyboard(costs, selective);
                             msg.reply_markup(inline_keyboard);
                             let r = api.send(msg).await?;
                             if let MessageOrChannelPost::Message(msg) = r {
                                 choose_question_message_id = Some(msg.id);
                             }
                         } else {
+                            let mut msg = SendMessage::new(
+                                game_chat,
+                                format!("Выбрана тема '{}', выберите цену", topic),
+                            );
                             let inline_keyboard = questioncosts_inline_keyboard(topic_idx, costs);
                             msg.reply_markup(inline_keyboard);
                             api.send(msg).await?;
