@@ -15,11 +15,15 @@ use crate::stickers::get_rand_sticker;
 use crate::question::Question;
 use crate::questionsstorage::{CatInBag, TourDescription, QuestionsStorage};
 
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct TopicIdx(pub usize);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum State {
     WaitingForPlayersToJoin,
     WaitingForTopic,
-    WaitingForQuestion,
+    WaitingForQuestion(TopicIdx),
     BeforeQuestionAsked(Question, i64),
     Falsestart(Question, i64),
     CanAnswer(Question, i64),
@@ -51,11 +55,9 @@ pub struct GameState {
     auctions: Vec<(String, usize)>,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct TopicIdx(pub usize);
-
 pub enum UiRequest {
     SendTextToMainChat(String),
+    RightBeforeAskingQuestion(String),
     SendSticker(String),
     SendImage(PathBuf),
     SendAudio(PathBuf),
@@ -181,7 +183,7 @@ impl GameState {
     fn set_state(&mut self, state: State) {
         self.state = state;
         match self.state {
-            State::WaitingForQuestion => {
+            State::WaitingForQuestion(_) => {
                 eprintln!("/question command was executed");
 
                 for (player, score) in self.players.iter() {
@@ -691,7 +693,7 @@ impl GameState {
         match self.questions.get(idx.0).cloned() {
             Some((topic, costs)) => {
                 if !costs.is_empty() {
-                    self.set_state(State::WaitingForQuestion);
+                    self.set_state(State::WaitingForQuestion(idx));
                     vec![UiRequest::ChooseQuestion(idx, topic.clone(), costs.clone())]
                 } else {
                     vec![]
@@ -706,15 +708,19 @@ impl GameState {
 
     pub fn select_question(
         &mut self,
-        topic_idx: TopicIdx,
         cost: usize,
         user: UserId,
         questions_storage: &Box<dyn QuestionsStorage>,
     ) -> Vec<UiRequest> {
-        if self.state != State::WaitingForQuestion {
-            println!("unexpected question selection");
-            return vec![];
-        }
+        let topic_idx = match self.state {
+            State::WaitingForQuestion(topic_idx) => {
+                topic_idx
+            }
+            _ => {
+                println!("unexpected question selection");
+                return vec![];
+            }
+        };
 
         if !self.is_current_player(user) {
             println!("only current player can select questions");
@@ -746,7 +752,7 @@ impl GameState {
 
         let mut reply = vec![];
         reply.push(
-            UiRequest::SendTextToMainChat(format!("Играем тему {}, вопрос за {}", topic, cost))
+            UiRequest::RightBeforeAskingQuestion(format!("Играем тему {}, вопрос за {}", topic, cost))
         );
 
         let question = match questions_storage.get(topic.clone(), cost / self.current_multiplier) {
@@ -975,6 +981,15 @@ impl GameState {
         vec![]
     }
 
+    pub fn get_topic_id(&self, topic_name: String) -> Option<TopicIdx> {
+        for (idx, (name, _)) in self.questions.iter().enumerate() {
+            if name == &topic_name {
+                return Some(TopicIdx(idx));
+            }
+        }
+        None
+    } 
+
     fn reload_available_questions(&mut self) {
         self.questions.clear();
         match self.tours.get(self.current_tour) {
@@ -1083,16 +1098,6 @@ impl GameState {
     fn get_state(&self) -> &State {
         &self.state
     }
-
-    #[cfg(test)]
-    fn get_topic_id(&self, topic_name: String) -> Option<TopicIdx> {
-        for (idx, (name, _)) in self.questions.iter().enumerate() {
-            if name == &topic_name {
-                return Some(TopicIdx(idx));
-            }
-        }
-        None
-    } 
 }
 
 #[cfg(test)]
@@ -1193,7 +1198,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id(topic);
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, player);
-        game_state.select_question(topic_id, cost, player, questions_storage);
+        game_state.select_question(cost, player, questions_storage);
         game_state.timeout();
         game_state.timeout();
     }
@@ -1249,13 +1254,13 @@ mod test {
         let sport_topic_id = game_state.get_topic_id("Sport".to_string()).unwrap();
         game_state.select_topic(sport_topic_id, p1);
         match game_state.get_state() {
-            &State::WaitingForQuestion => {}
+            &State::WaitingForQuestion(_) => {}
             _ => {
                 assert!(false);
             }
         }
 
-        game_state.select_question(sport_topic_id, 100, p1, &questions_storage);
+        game_state.select_question(100, p1, &questions_storage);
         game_state.timeout();
         match game_state.get_state() {
             &State::Falsestart(_, _) => {}
@@ -1280,13 +1285,13 @@ mod test {
         assert_eq!(game_state.get_state(), &State::WaitingForTopic);
 
         game_state.select_topic(sport_topic_id, p1);
-        game_state.select_question(sport_topic_id, 1, p1, &questions_storage);
+        game_state.select_question(1, p1, &questions_storage);
         // Cannot select already selected question
-        assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
+        matches!(game_state.get_state(), &State::WaitingForQuestion(_));
 
-        game_state.select_question(sport_topic_id, 200, p2, &questions_storage);
+        game_state.select_question(200, p2, &questions_storage);
         // Only current player can select next question
-        assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
+        matches!(game_state.get_state(), &State::WaitingForQuestion(_));
     }
 
     #[test]
@@ -1348,7 +1353,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, p1);
-        game_state.select_question(topic_id, 200, p1, &questions_storage);
+        game_state.select_question(200, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1373,7 +1378,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, p1);
-        game_state.select_question(topic_id, 200, p1, &questions_storage);
+        game_state.select_question(200, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1398,7 +1403,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, p1);
-        game_state.select_question(topic_id, 100, p1, &questions_storage);
+        game_state.select_question(100, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1424,7 +1429,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, p1);
-        game_state.select_question(topic_id, 100, p1, &questions_storage);
+        game_state.select_question(100, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1628,7 +1633,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, p1_id);
-        game_state.select_question(topic_id, 100, p1_id, &questions_storage);
+        game_state.select_question(100, p1_id, &questions_storage);
 
         match game_state.get_state() {
             &State::Pause => {}
@@ -1679,7 +1684,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, p1_id);
-        game_state.select_question(topic_id, 100, p1_id, &questions_storage);
+        game_state.select_question(100, p1_id, &questions_storage);
 
         // Wrong choices
         assert!(matches!(game_state.get_state(), State::CatInBagChoosingPlayer(_, _)));
@@ -1742,7 +1747,7 @@ mod test {
         let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
         let topic_id = maybe_topic_id.unwrap();
         game_state.select_topic(topic_id, p1_id);
-        game_state.select_question(topic_id, 100, p1_id, &questions_storage);
+        game_state.select_question(100, p1_id, &questions_storage);
 
         assert!(matches!(game_state.get_state(), State::WaitingForAuction(..)));
 

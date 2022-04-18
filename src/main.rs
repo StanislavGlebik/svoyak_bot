@@ -12,11 +12,14 @@ use std::io::prelude::*;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
-use telegram_bot::reply_markup;
+use telegram_bot::{reply_markup, types::MessageId};
 use tokio as tokio_01;
 use tokio_compat::runtime::Runtime;
 
-use telegram_bot::{Api, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, MessageKind};
+use telegram_bot::{
+    Api, ChatId, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, MessageKind,
+    MessageOrChannelPost, Message, ReplyKeyboardRemove,
+};
 use telegram_bot::{SendMessage, Update, UpdateKind, UpdatesStream};
 
 mod gamestate;
@@ -165,7 +168,19 @@ fn topics_inline_keyboard(topics: Vec<(TopicIdx, String)>) -> InlineKeyboardMark
         for (idx, topic) in topics {
             let data = format!("/topic{}", idx.0);
             let row = inline_markup.add_empty_row();
-            row.push(InlineKeyboardButton::callback(format!("{}", topic), data));
+        row.push(InlineKeyboardButton::callback(format!("{}", topic), data));
+        }
+    }
+    inline_markup
+}
+
+fn topics_keyboard(topics: Vec<(TopicIdx, String)>) -> ReplyKeyboardMarkup {
+    let mut inline_markup = ReplyKeyboardMarkup::new();
+    inline_markup.one_time_keyboard();
+    {
+        for (_, topic) in topics {
+            let row = inline_markup.add_empty_row();
+            row.push(KeyboardButton::new(format!("{}", topic)));
         }
     }
     inline_markup
@@ -181,6 +196,19 @@ fn questioncosts_inline_keyboard(topic_idx: TopicIdx, costs: Vec<usize>) -> Inli
         }
     }
     inline_markup
+}
+     
+
+fn questioncosts_keyboard(costs: Vec<usize>) -> ReplyKeyboardMarkup {
+    let mut markup = ReplyKeyboardMarkup::new();
+    markup.one_time_keyboard();
+    {
+        for cost in costs {
+            let row = markup.add_empty_row();
+            row.push(KeyboardButton::new(format!("{}", cost)));
+        }
+    }
+    markup
 }
 
 fn cat_in_bag_player_inline_keyboard(players: Vec<player::Player>) -> InlineKeyboardMarkup {
@@ -234,6 +262,8 @@ enum TextMessage {
     UpdateScore(String, i64),
     HideQuestion(String, usize),
     UpdateAuctionCost(String, usize),
+    ChooseTopic(String),
+    ChooseQuestion(usize),
 }
 
 enum CallbackMessage {
@@ -246,7 +276,26 @@ enum CallbackMessage {
     CatInBagCostChosen(usize),
 }
 
-fn parse_text_message(data: &String) -> TextMessage {
+fn parse_text_message(message: &Message, data: &String, choose_topic_message_id: Option<MessageId>, choose_question_message_id: Option<MessageId>) -> TextMessage {
+    if let Some(ref msg_or_post) = &message.reply_to_message {
+        if let MessageOrChannelPost::Message(ref msg) = **msg_or_post {
+            if Some(msg.id) == choose_topic_message_id {
+                return TextMessage::ChooseTopic(data.to_string());
+            }
+        }
+    }
+
+    if let Some(ref msg_or_post) = &message.reply_to_message {
+        if let MessageOrChannelPost::Message(ref msg) = **msg_or_post {
+            if Some(msg.id) == choose_question_message_id {
+
+                if let Ok(cost) = data.parse::<usize>() {
+                    return TextMessage::ChooseQuestion(cost);
+                }
+            }
+        }
+    }
+
     if data.starts_with("/join") {
         let split: Vec<_> = data.splitn(2, ' ').collect();
         if split.len() == 2 {
@@ -394,6 +443,10 @@ struct Opt {
     /// Do not download questions from google drive.
     #[structopt(long)]   
     use_cached_questions: bool,
+
+    /// Experimental option to not use inline keyboards
+    #[structopt(long)]
+    use_separate_keyboards: bool,
 }
 
 fn main() -> Result<(), Error> {
@@ -466,6 +519,9 @@ fn main() -> Result<(), Error> {
 
     let fut = async move {
         let mut s = requests_stream.compat();
+        let mut choose_topic_message_id: Option<MessageId> = None;
+        let mut choose_question_message_id: Option<MessageId> = None;
+
         while let Some(request) = s.next().await {
             let request = match request {
                 Ok(request) => request,
@@ -480,7 +536,7 @@ fn main() -> Result<(), Error> {
                         UpdateKind::Message(message) => {
                             println!("message chat id {}", message.chat.id());
                             if let MessageKind::Text { ref data, .. } = message.kind {
-                                match parse_text_message(data) {
+                                match parse_text_message(&message, data, choose_topic_message_id, choose_question_message_id) {
                                     TextMessage::Join(name) => {
                                         gamestate.add_player(message.from.id, name)
                                     }
@@ -508,6 +564,17 @@ fn main() -> Result<(), Error> {
                                     TextMessage::UpdateAuctionCost(user, cost) => {
                                         gamestate.update_auction_cost(message.from.id, user, cost)
                                     }
+                                    TextMessage::ChooseTopic(topic) => {
+                                        if let Some(topic_id) = gamestate.get_topic_id(topic.clone()) {
+                                            gamestate.select_topic(topic_id, message.from.id)
+                                        } else {
+                                            eprintln!("unknown topic when choosing topic from keyboard {}", topic);
+                                            vec![]
+                                        }
+                                    }
+                                    TextMessage::ChooseQuestion(cost) => {
+                                        gamestate.select_question(cost, message.from.id, &question_storage)
+                                    }
                                 }
                             } else if let  MessageKind::Sticker { ref data } = message.kind {
                                 eprintln!("sticker: {}", data.file_id);
@@ -523,8 +590,8 @@ fn main() -> Result<(), Error> {
                                 CallbackMessage::SelectedTopic(topic_id) => {
                                     gamestate.select_topic(topic_id, callback.from.id)
                                 }
-                                CallbackMessage::SelectedQuestion(topic_idx, cost) => {
-                                    gamestate.select_question(topic_idx, cost, callback.from.id, &question_storage)
+                                CallbackMessage::SelectedQuestion(_topic_idx, cost) => {
+                                    gamestate.select_question(cost, callback.from.id, &question_storage)
                                 }
                                 CallbackMessage::AnswerYes => gamestate.yes_reply(callback.from.id),
                                 CallbackMessage::AnswerNo => gamestate.no_reply(callback.from.id),
@@ -548,6 +615,13 @@ fn main() -> Result<(), Error> {
                     gamestate::UiRequest::SendTextToMainChat(msg) => {
                         if !msg.is_empty() {
                             let msg = SendMessage::new(game_chat, msg);
+                            api.send(msg).await?;
+                        }
+                    }
+                    gamestate::UiRequest::RightBeforeAskingQuestion(msg) => {
+                        if !msg.is_empty() {
+                            let mut msg = SendMessage::new(game_chat, msg);
+                            msg.reply_markup(ReplyKeyboardRemove::new());
                             api.send(msg).await?;
                         }
                     }
@@ -612,16 +686,34 @@ fn main() -> Result<(), Error> {
                             game_chat,
                             format!("{}, выберите тему", current_player_name),
                         );
-                        let inline_keyboard = topics_inline_keyboard(topics);
-                        msg.reply_markup(inline_keyboard);
-                        api.send(msg).await?;
+                        if opt.use_separate_keyboards {
+                            let keyboard = topics_keyboard(topics);
+                            msg.reply_markup(keyboard);
+                            let r = api.send(msg).await?;
+                            if let MessageOrChannelPost::Message(msg) = r {
+                                choose_topic_message_id = Some(msg.id);
+                            }
+                        } else {
+                            let inline_keyboard = topics_inline_keyboard(topics);
+                            msg.reply_markup(inline_keyboard);
+                            api.send(msg).await?;
+                        }
                     }
                     gamestate::UiRequest::ChooseQuestion(topic_idx, topic, costs) => {
                         let mut msg =
                             SendMessage::new(game_chat, format!("Выбрана тема '{}', выберите цену", topic));
-                        let inline_keyboard = questioncosts_inline_keyboard(topic_idx, costs);
-                        msg.reply_markup(inline_keyboard);
-                        api.send(msg).await?;
+                        if opt.use_separate_keyboards {
+                            let inline_keyboard = questioncosts_keyboard(costs);
+                            msg.reply_markup(inline_keyboard);
+                            let r = api.send(msg).await?;
+                            if let MessageOrChannelPost::Message(msg) = r {
+                                choose_question_message_id = Some(msg.id);
+                            }
+                        } else {
+                            let inline_keyboard = questioncosts_inline_keyboard(topic_idx, costs);
+                            msg.reply_markup(inline_keyboard);
+                            api.send(msg).await?;
+                        }
                     }
                     gamestate::UiRequest::AskAdminYesNo(question) => {
                         let inline_keyboard = reply_markup!(inline_keyboard,
