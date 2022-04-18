@@ -55,8 +55,14 @@ pub struct CsvQuestionsStorage {
 
 impl CsvQuestionsStorage {
     // TODO(stash): skip header
-    pub async fn new<P: AsRef<Path>>(p: P, google_api_key: Option<String>) -> Result<Self, Error> {
-        let dir = p.as_ref();
+    pub async fn new(p: String, google_api_key: Option<String>) -> Result<Self, Error> {
+        let dir = if p.starts_with("http") {
+            eprintln!("downloading questions from google drive");
+            downloading_questions_from_gdrive(p).await?
+        } else {
+            PathBuf::from(&p)
+        };
+
         eprintln!("{:?}", dir);
         let mut questions_storage = HashMap::new();
 
@@ -169,6 +175,31 @@ impl CsvQuestionsStorage {
             auctions,
         })
     }
+}
+
+async fn downloading_questions_from_gdrive(url: String) -> Result<PathBuf, Error> {
+    let regex = "^https://docs.google.com/spreadsheets/d/([^/]+)/edit";
+    let re = Regex::new(regex)?;
+    let matches = re.captures(&url).ok_or_else(|| err_msg("invalid questions url"))?;
+    let m = matches.get(1).unwrap().as_str();
+
+    
+    let p = PathBuf::from("downloaded_questions");
+    if !p.exists() {
+        std::fs::create_dir(p.clone())?;
+    }
+    for i in 1..4 {
+        let s = serde_urlencoded::to_string(&[("sheet", format!("Тур {}", i))])?;
+        let url = format!("https://docs.google.com/spreadsheets/d/{}/gviz/tq?tqx=out:csv&{}", m, s);
+        eprintln!("downloading {}", url);
+        let bytes = download_url(&url).await?;
+        eprintln!("downloaded {}", bytes.len());
+        let tour = p.join(format!("tour{}.csv", i));
+        std::fs::write(tour.clone(), bytes)?;
+        eprintln!("written to {:?}", tour);
+    }
+    
+    Ok(p)
 }
 
 async fn parse_attachment(attachment: &str, google_api_key: Option<String>) -> Result<(Option<PathBuf>, Option<PathBuf>), Error> {
