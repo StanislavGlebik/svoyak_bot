@@ -12,6 +12,7 @@ futures = { version = "0.1.*" }
 futures-cpupool = "*"
 hyper = "0.13.*"
 hyper-tls = "0.4.*"
+id3 = "*"
 infer = "*"
 itertools = "*"
 rand = "*"

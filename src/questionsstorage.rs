@@ -244,6 +244,19 @@ async fn parse_attachment(attachment: &str, google_api_key: Option<String>) -> R
     if  ty.matcher_type() == infer::MatcherType::Image {
         Ok((Some(filename.into()), None))
     } else if ty.matcher_type() == infer::MatcherType::Audio {
+        // Removes mp3 if they exists
+        match id3::Tag::remove_from_path(filename.clone()) {
+            Ok(true) => {
+                eprintln!("successfully removed tags from {}", filename);
+            }
+            Ok(false) => {
+                eprintln!("no mp3 tags in {}", filename);
+            }
+            Err(err) => {
+                eprintln!("failed to remove mp3 tags from {}: {}", filename, err);
+            }
+        };
+
         Ok((None, Some(filename.into())))
     } else {
         Err(err_msg(format!("invalid attachment type {}", ty)))
