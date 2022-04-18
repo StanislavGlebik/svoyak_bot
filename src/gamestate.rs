@@ -51,6 +51,7 @@ pub struct GameState {
     auctions: Vec<(String, usize)>,
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct TopicIdx(pub usize);
 
 pub enum UiRequest {
@@ -1092,6 +1093,16 @@ impl GameState {
     fn get_state(&self) -> &State {
         &self.state
     }
+
+    #[cfg(test)]
+    fn get_topic_id(&self, topic_name: String) -> Option<TopicIdx> {
+        for (idx, (name, _)) in self.questions.iter().enumerate() {
+            if name == &topic_name {
+                return Some(TopicIdx(idx));
+            }
+        }
+        None
+    } 
 }
 
 #[cfg(test)]
@@ -1189,8 +1200,10 @@ mod test {
     ) {
         let topic = topic.to_string();
         game_state.set_current_player(player).unwrap();
-        game_state.select_topic(topic.clone(), player);
-        game_state.select_question(topic, cost, player, questions_storage);
+        let maybe_topic_id = game_state.get_topic_id(topic);
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, player);
+        game_state.select_question(topic_id, cost, player, questions_storage);
         game_state.timeout();
         game_state.timeout();
     }
@@ -1243,7 +1256,8 @@ mod test {
         game_state.set_current_player(p1).unwrap();
 
         game_state.next_question(admin);
-        game_state.select_topic("Sport", p1);
+        let sport_topic_id = game_state.get_topic_id("Sport".to_string()).unwrap();
+        game_state.select_topic(sport_topic_id, p1);
         match game_state.get_state() {
             &State::WaitingForQuestion => {}
             _ => {
@@ -1251,7 +1265,7 @@ mod test {
             }
         }
 
-        game_state.select_question("Sport", 100, p1, &questions_storage);
+        game_state.select_question(sport_topic_id, 100, p1, &questions_storage);
         game_state.timeout();
         match game_state.get_state() {
             &State::Falsestart(_, _) => {}
@@ -1270,17 +1284,17 @@ mod test {
         assert_eq!(game_state.get_current_player().map(|p| p.id()), Some(p1));
 
         game_state.next_question(admin);
-
-        game_state.select_topic("Rock'n'roll", p1);
+        
+        game_state.select_topic(TopicIdx(100), p1);
         // Cannot select non-existing topic
         assert_eq!(game_state.get_state(), &State::WaitingForTopic);
 
-        game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 1, p1, &questions_storage);
+        game_state.select_topic(sport_topic_id, p1);
+        game_state.select_question(sport_topic_id, 1, p1, &questions_storage);
         // Cannot select already selected question
         assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
 
-        game_state.select_question("Sport", 200, p2, &questions_storage);
+        game_state.select_question(sport_topic_id, 200, p2, &questions_storage);
         // Only current player can select next question
         assert_eq!(game_state.get_state(), &State::WaitingForQuestion);
     }
@@ -1341,8 +1355,10 @@ mod test {
         game_state.start(admin);
         game_state.next_question(admin);
 
-        game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 200, p1, &questions_storage);
+        let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, p1);
+        game_state.select_question(topic_id, 200, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1364,8 +1380,10 @@ mod test {
         game_state.start(admin);
         game_state.next_question(admin);
 
-        game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 200, p1, &questions_storage);
+        let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, p1);
+        game_state.select_question(topic_id, 200, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1387,8 +1405,10 @@ mod test {
         game_state.next_question(admin);
 
         game_state.set_current_player(p1).unwrap();
-        game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 100, p1, &questions_storage);
+        let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, p1);
+        game_state.select_question(topic_id, 100, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1411,8 +1431,10 @@ mod test {
         game_state.next_question(admin);
 
         game_state.set_current_player(p1).unwrap();
-        game_state.select_topic("Sport", p1);
-        game_state.select_question("Sport", 100, p1, &questions_storage);
+        let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, p1);
+        game_state.select_question(topic_id, 100, p1, &questions_storage);
         game_state.timeout();
         game_state.message(p1, String::from("1"));
         game_state.timeout();
@@ -1553,10 +1575,11 @@ mod test {
         match game_state.get_state() {
             &State::CanAnswer(_, _) => {}
             _ => {
-                panic!(format!(
+                eprintln!(
                     "Must be in CanAnswer state now: no players answered; but in {:?}",
                     game_state.get_state()
-                ));
+                );
+                panic!("failed");
             }
         }
         players_answered.clear();
@@ -1612,8 +1635,10 @@ mod test {
 
         game_state.next_question(admin_id);
         game_state.set_current_player(p1_id).unwrap();
-        game_state.select_topic("Sport", p1_id);
-        game_state.select_question("Sport", 100, p1_id, &questions_storage);
+        let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, p1_id);
+        game_state.select_question(topic_id, 100, p1_id, &questions_storage);
 
         match game_state.get_state() {
             &State::Pause => {}
@@ -1661,8 +1686,10 @@ mod test {
 
         game_state.next_question(admin_id);
         game_state.set_current_player(p1_id).unwrap();
-        game_state.select_topic("Sport", p1_id);
-        game_state.select_question("Sport", 100, p1_id, &questions_storage);
+        let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, p1_id);
+        game_state.select_question(topic_id, 100, p1_id, &questions_storage);
 
         // Wrong choices
         assert!(matches!(game_state.get_state(), State::CatInBagChoosingPlayer(_, _)));
@@ -1722,14 +1749,16 @@ mod test {
 
         game_state.next_question(admin_id);
         game_state.set_current_player(p1_id).unwrap();
-        game_state.select_topic("Sport", p1_id);
-        game_state.select_question("Sport", 100, p1_id, &questions_storage);
+        let maybe_topic_id = game_state.get_topic_id("Sport".to_string());
+        let topic_id = maybe_topic_id.unwrap();
+        game_state.select_topic(topic_id, p1_id);
+        game_state.select_question(topic_id, 100, p1_id, &questions_storage);
 
-        assert!(matches!(game_state.get_state(), State::WaitingForAuction(_)));
+        assert!(matches!(game_state.get_state(), State::WaitingForAuction(..)));
 
         // non-admin user
         game_state.update_auction_cost(p1_id, "new_1".to_string(), 100);
-        assert!(matches!(game_state.get_state(), State::WaitingForAuction(_)));
+        assert!(matches!(game_state.get_state(), State::WaitingForAuction(..)));
 
         game_state.update_auction_cost(admin_id, "new_1".to_string(), 100);
         assert!(matches!(game_state.get_state(), State::Answering(_, _, _)));
