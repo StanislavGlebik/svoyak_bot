@@ -11,7 +11,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process::Command;
 use std::time::{Duration, Instant};
-use telegram_bot::{ParseMode, reply_markup};
+use telegram_bot::reply_markup;
 use tokio as tokio_01;
 use tokio_compat::runtime::Runtime;
 
@@ -539,11 +539,6 @@ fn main() -> Result<(), Error> {
                             let msg = SendMessage::new(game_chat, msg);
                             api.send(msg).await?;
                         }
-                    }
-                    gamestate::UiRequest::SendHtmlToMainChat(msg) => {
-                        let mut msg = SendMessage::new(game_chat, msg);
-                        msg.parse_mode(ParseMode::Html);
-                        api.send(msg).await?;
                     }
                     gamestate::UiRequest::SendSticker(sticker) => {
                         let r = send_sticker_via_curl(game_chat, &config.token, &sticker);

@@ -56,7 +56,6 @@ pub struct TopicIdx(pub usize);
 
 pub enum UiRequest {
     SendTextToMainChat(String),
-    SendHtmlToMainChat(String),
     SendSticker(String),
     SendImage(PathBuf),
     SendAudio(PathBuf),
@@ -318,14 +317,6 @@ impl GameState {
             self.reload_available_questions();
             self.set_state(State::Pause);
 
-            // let mut topics = String::from("Вот темы сегодняшней игры, они как всегда прекрасны:\n");
-            // for (id, tour) in self.tours.iter().enumerate() {
-            //     topics += &format!("<b>Тур {}</b>\n", id + 1);
-            //     for topic in &tour.topics {
-            //         topics += &format!("{}\n", topic.name);
-            //     }
-            // }
-
             let topics: String = self
                 .questions
                 .iter()
@@ -334,7 +325,6 @@ impl GameState {
             vec![
                 UiRequest::SendTextToMainChat(format!("Здравствуйте, здравствуйте, добрый день! Это своя игра!")),
                 UiRequest::SendTextToMainChat(format!("Темы первого раунда:\n{}", topics)),
-                // UiRequest::SendHtmlToMainChat(topics),
                 UiRequest::SendTextToMainChat(format!(
                     "Игру начинает {}",
                     self.current_player.clone().unwrap().name()
