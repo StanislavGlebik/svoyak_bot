@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process::Command;
 use std::time::{Duration, Instant};
+use structopt::StructOpt;
 use telegram_bot::reply_markup;
 use tokio as tokio_01;
 use tokio_compat::runtime::Runtime;
@@ -387,7 +388,16 @@ fn parse_callback(data: &Option<String>) -> CallbackMessage {
     CallbackMessage::Unknown
 }
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "svoyak_bot")]
+struct Opt {
+    /// Do not download questions from google drive.
+    #[structopt(long)]   
+    use_cached_questions: bool,
+}
+
 fn main() -> Result<(), Error> {
+    let opt = Opt::from_args();
     let google_api_key = env::var(GOOGLE_API_KEY);
 
     let mut runtime = Runtime::new()?;
@@ -400,6 +410,7 @@ fn main() -> Result<(), Error> {
         CsvQuestionsStorage::new(
             config.questions_storage_path.clone(),
             google_api_key.ok().map(|x| x.to_string()),
+            opt.use_cached_questions,
         )
     )?;
     let question_storage: Box<dyn QuestionsStorage> = Box::new(question_storage);

@@ -55,10 +55,10 @@ pub struct CsvQuestionsStorage {
 
 impl CsvQuestionsStorage {
     // TODO(stash): skip header
-    pub async fn new(p: String, google_api_key: Option<String>) -> Result<Self, Error> {
+    pub async fn new(p: String, google_api_key: Option<String>, use_cached_questions: bool) -> Result<Self, Error> {
         let dir = if p.starts_with("http") {
             eprintln!("downloading questions from google drive");
-            downloading_questions_from_gdrive(p).await?
+            downloading_questions_from_gdrive(p, use_cached_questions).await?
         } else {
             PathBuf::from(&p)
         };
@@ -177,14 +177,27 @@ impl CsvQuestionsStorage {
     }
 }
 
-async fn downloading_questions_from_gdrive(url: String) -> Result<PathBuf, Error> {
+async fn downloading_questions_from_gdrive(url: String, use_cached_questions: bool) -> Result<PathBuf, Error> {
+    
+    let p = PathBuf::from("downloaded_questions");
+    if use_cached_questions {
+        eprintln!("using cached questions");
+        for i in 1..4 {
+            let tour = p.join(format!("tour{}.csv", i));
+            if !tour.exists() {
+                return Err(err_msg(format!("cannot use cached questions because {:?} does not exist", p)));
+            }
+        }
+
+        return Ok(p);
+    }
+
     let regex = "^https://docs.google.com/spreadsheets/d/([^/]+)/edit";
     let re = Regex::new(regex)?;
     let matches = re.captures(&url).ok_or_else(|| err_msg("invalid questions url"))?;
     let m = matches.get(1).unwrap().as_str();
 
     
-    let p = PathBuf::from("downloaded_questions");
     if !p.exists() {
         std::fs::create_dir(p.clone())?;
     }
