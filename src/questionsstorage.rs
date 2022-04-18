@@ -217,12 +217,11 @@ async fn downloading_questions_from_gdrive(url: String, use_cached_questions: bo
 
 async fn parse_attachment(attachment: &str, google_api_key: Option<String>) -> Result<(Option<PathBuf>, Option<PathBuf>), Error> {
     let split = attachment.splitn(2, " ").collect::<Vec<_>>();
-    if split.len() != 2 {
-        return Err(err_msg(format!("invalid attachment {}", attachment)));
-    }
-
-    let ty = split[0];
-    let uri = split[1];
+    let uri = if split.len() == 2 {
+        split[1]
+    } else {
+        split[0]
+    };
 
     let uri = convert_url(uri.to_string(), google_api_key);
     eprintln!("converted url to {}", uri);
@@ -239,10 +238,12 @@ async fn parse_attachment(attachment: &str, google_api_key: Option<String>) -> R
         eprintln!("skiping download because already downloaded");
     }
 
+    let maybe_type = infer::get_from_path(filename.clone())?;
+    let ty = maybe_type.ok_or_else(|| err_msg(format!("cannot get type of {}", filename)))?;
 
-    if ty == "image" {
+    if  ty.matcher_type() == infer::MatcherType::Image {
         Ok((Some(filename.into()), None))
-    } else if ty == "audio" {
+    } else if ty.matcher_type() == infer::MatcherType::Audio {
         Ok((None, Some(filename.into())))
     } else {
         Err(err_msg(format!("invalid attachment type {}", ty)))
